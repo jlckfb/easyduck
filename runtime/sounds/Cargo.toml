@@ -1,0 +1,13 @@
+# Deterministic voice generator and synthesis library.
+[package]
+name = "sounds"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow = "1"
+clap = { workspace = true, features = ["derive"] }
+hound.workspace = true
+sha2 = "0.11"
