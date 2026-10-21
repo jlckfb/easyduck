@@ -1,0 +1,11 @@
+/build/
+target/
+__pycache__/
+*.pyc
+.env
+.env.*
+!.env.example
+/config/private/
+/deploy/backups/
+*.img
+*.tar.gz
