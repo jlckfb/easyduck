@@ -28,7 +28,6 @@ enabled = true
 device = "plughw:0,0"
 bank = "/var/lib/robot/sounds"
 greet = true
-[theremin]
 [detect]
 [chorale]
 [media]

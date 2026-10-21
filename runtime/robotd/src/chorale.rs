@@ -581,7 +581,7 @@ impl Chorale {
 /// `reach` is where the current note sits in this duck's own line (0 low, 1 high): the head
 /// lifts on the high notes, which is what a singer actually does.
 ///
-/// Amplitudes are deliberately small — the head carries the ToF and the policy's balance has
+/// Amplitudes are deliberately small — the head has its own inertia and the policy's balance has
 /// opinions about mass this high up. The pitch sign assumes negative is up, as `robot.look`'s
 /// examples suggest; if hardware says otherwise, flip `REACH_LIFT`.
 pub fn head_expression(beats: f64, reach: f64) -> [f64; 4] {

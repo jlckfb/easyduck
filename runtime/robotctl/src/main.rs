@@ -17,7 +17,6 @@ use duck_ipc_proto as proto;
 mod configure;
 mod duck;
 mod monitor;
-mod path_map;
 mod show;
 
 /// Exit codes. Stable — CI asserts on these.
@@ -68,12 +67,6 @@ struct Cli {
     #[arg(long, global = true, default_value = proto::socket::PAD)]
     pad_socket: PathBuf,
 
-    /// Path to `tofd`'s depth stream, which `monitor` draws the ToF matrix from.
-    ///
-    /// Optional in the same sense as the pad tap, and more often absent: most ducks
-    /// have no ToF fitted, and `monitor` says so in the block rather than failing.
-    #[arg(long, global = true, default_value = proto::socket::TOF)]
-    tof_socket: PathBuf,
 
     #[command(subcommand)]
     namespace: Namespace,
@@ -131,23 +124,6 @@ enum Namespace {
         piece: Option<u8>,
     },
 
-    /// Play the duck: the head's depth sensor becomes a theremin, and a hand in front of the
-    /// beak is the pitch — closer is higher, and the mouth opens with the note.
-    ///
-    /// Runs until Ctrl-C, printing what the instrument is doing, and puts it down on the way
-    /// out. An explicit mode with nothing clever inside it: while it is up, the nearest thing
-    /// in the playable band is the hand. Point the duck at open space and it is silent; point
-    /// it at a wall 40 cm away and it plays a steady note.
-    ///
-    /// The readout's last column is what the *sensor* said about the frame — how many zones
-    /// carry a status the robot believes, then the count per status code. That line is the
-    /// answer to every "why did it stop playing".
-    Theremin {
-        /// Put the instrument down instead of picking it up. For a theremin left up by a
-        /// client that went away.
-        #[arg(long)]
-        off: bool,
-    },
 
     /// Edit robotd's config (/etc/robot/robotd.toml) without reading a wall of comments.
     ///
@@ -413,7 +389,7 @@ fn run_quack(socket: &Path) -> Result<(), Failure> {
     Ok(())
 }
 
-/// Set by the `SIGINT` handler so the theremin is put down on the way out rather than left
+/// Set by the `SIGINT` handler so a live command can stop cleanly rather than be left
 /// sounding. A bare `AtomicBool` store is the only thing a signal handler may safely do.
 static INTERRUPTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
@@ -421,115 +397,9 @@ extern "C" fn note_interrupt(_signal: libc::c_int) {
     INTERRUPTED.store(true, std::sync::atomic::Ordering::Relaxed);
 }
 
-/// `robotctl theremin` — pick the ToF theremin up, watch it, put it down.
-///
-/// A live view rather than a one-shot, because every question anyone has about this feature is
-/// a question about what it is doing *now*: is it seeing my hand, what note is that, and —
-/// the one that matters when it is not working — what is the sensor actually reporting. All
-/// three are in `robot.state`'s theremin block, so this is a subscription with a one-line
-/// renderer over it.
-fn run_theremin(socket: &Path, off: bool) -> Result<(), Failure> {
-    let mut client = Client::connect_to("robotd", socket)?;
-    client.hello()?;
-
-    let ask = |client: &mut Client, active: bool| -> Result<proto::ThereminResult, Failure> {
-        let result = result_of(client.call(&proto::Call::RobotTheremin(
-            proto::ThereminParams { active },
-        ))?)?;
-        decode(&result)
-    };
-
-    if off {
-        let outcome = ask(&mut client, false)?;
-        if !outcome.accepted {
-            let reason = outcome.reason.unwrap_or_else(|| "refused".to_owned());
-            return Err(Failure::new(exit::REFUSED, reason));
-        }
-        println!("theremin put down");
-        return Ok(());
-    }
-
-    let outcome = ask(&mut client, true)?;
-    if !outcome.accepted {
-        let reason = outcome
-            .reason
-            .unwrap_or_else(|| "the robot refused the theremin".to_owned());
-        return Err(Failure::new(exit::REFUSED, reason));
-    }
-
-    // SAFETY: installing a handler whose whole body is one relaxed atomic store. Done after
-    // the instrument is up, so an interrupt before this point simply kills the process — and
-    // the theremin was not up yet to be left behind.
-    unsafe {
-        libc::signal(
-            libc::SIGINT,
-            note_interrupt as *const () as libc::sighandler_t,
-        );
-    }
-
-    println!("playing — a hand in front of the beak, closer is higher · Ctrl-C to stop");
-    // A second connection for the state stream: the first one is kept to put the instrument
-    // down with, and a subscription is a stream of notifications rather than a call/response,
-    // so sharing one would mean untangling the two.
-    let mut stream = Client::connect_to("robotd", socket)?;
-    stream.hello()?;
-    stream.send(&proto::Request::call(
-        proto::Id::Number(1),
-        &proto::Call::RobotSubscribe(proto::SubscribeParams { hz: Some(15) }),
-    ))?;
-
-    let mut line = String::new();
-    while !INTERRUPTED.load(std::sync::atomic::Ordering::Relaxed) {
-        line.clear();
-        match stream.reader.read_line(&mut line) {
-            Err(e) => {
-                let _ = ask(&mut client, false);
-                return Err(Failure::new(
-                    exit::UNREACHABLE,
-                    format!("the state stream stopped: {e}"),
-                ));
-            }
-            Ok(0) => break,
-            Ok(_) => {}
-        }
-        let Some(state) = serde_json::from_str::<proto::Request>(&line)
-            .ok()
-            .and_then(|r| r.as_state())
-        else {
-            continue;
-        };
-        // The block is absent while the instrument is down, which after a successful pick-up
-        // means the robot put it down itself.
-        let Some(theremin) = state.theremin else {
-            println!("\rthe robot put the theremin down                                     ");
-            return Ok(());
-        };
-        // One rewritten line: this is a live readout, and a scrolling one would be unreadable
-        // at 15 Hz.
-        let sensor = theremin.sensor.as_deref().unwrap_or("");
-        match (theremin.hand_range_m, theremin.note_hz) {
-            (Some(range), Some(hz)) => print!(
-                "\r  {range:.2} m {:1} {hz:6.1} Hz  {:>3.0}% {:<10}  {sensor:<34}",
-                if theremin.held { "~" } else { " " },
-                theremin.mouth * 100.0,
-                bar(theremin.mouth),
-            ),
-            _ => print!("\r  {:<32}{sensor:<34}", "— no hand —"),
-        }
-        let _ = std::io::stdout().flush();
-    }
-
-    println!();
-    let outcome = ask(&mut client, false)?;
-    if outcome.accepted {
-        println!("theremin put down");
-    }
-    Ok(())
-}
-
 /// `robotctl chorale` — go looking for other ducks to sing with, and watch what happens.
 ///
-/// A live view for the same reason the theremin's is: every question about this feature is about
+/// A live view of the ensemble: every question about this feature is about
 /// what it is doing *now* — has it found anyone, is it conducting or following, what part did it end
 /// up with. All of it is in `robot.state`'s chorale block.
 fn run_chorale(socket: &Path, off: bool, piece: Option<u8>) -> Result<(), Failure> {
@@ -643,13 +513,6 @@ fn run_chorale(socket: &Path, off: bool, piece: Option<u8>) -> Result<(), Failur
         println!("chorale stopped");
     }
     Ok(())
-}
-
-/// A ten-cell meter for the mouth opening — the one part of the readout you can watch
-/// without reading it.
-fn bar(fraction: f64) -> String {
-    let filled = (fraction.clamp(0.0, 1.0) * 10.0).round() as usize;
-    "█".repeat(filled)
 }
 
 #[derive(clap::ValueEnum, Clone, Copy, Debug)]
@@ -2740,7 +2603,6 @@ fn run(cli: Cli) -> Result<(), Failure> {
             return monitor::run(
                 &cli.robot_socket,
                 &cli.pad_socket,
-                &cli.tof_socket,
                 hz,
                 json,
             );
@@ -2771,9 +2633,6 @@ fn run(cli: Cli) -> Result<(), Failure> {
         }
         Namespace::Quack => {
             return run_quack(&cli.robot_socket);
-        }
-        Namespace::Theremin { off } => {
-            return run_theremin(&cli.robot_socket, off);
         }
         Namespace::Chorale { off, piece } => {
             return run_chorale(&cli.robot_socket, off, piece);
@@ -3005,6 +2864,14 @@ fn compact(value: &impl serde::Serialize) -> String {
 }
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn removed_sensor_commands_are_not_exposed() {
+        assert!(Cli::try_parse_from(["robotctl", "theremin"]).is_err());
+        assert!(Cli::try_parse_from(["robotctl", "--tof-socket", "/tmp/depth.sock", "monitor"]).is_err());
+        assert!(Cli::try_parse_from(["robotctl", "robot", "look", "1", "0", "0"]).is_ok());
+        assert!(Cli::try_parse_from(["robotctl", "quack"]).is_ok());
+    }
     use super::*;
     use clap::CommandFactory;
 

@@ -5,8 +5,7 @@
 pub enum Kind {
     /// On or off. Toggle.
     Bool,
-    /// On, off, or absent-meaning-auto (`Option<bool>` — e.g. pet detection resolves per
-    /// mode when unset). Cycle through the three.
+    /// On, off, or absent-meaning-auto (`Option<bool>`). Cycle through the three.
     TriBool,
     /// A whole number.
     Integer,
@@ -359,43 +358,11 @@ pub const REGISTRY: &[Entry] = &[
         Kind::Bool,
         "Sing with nearby ducks — off means silent AND invisible on the air",
     ),
-    // ── [theremin] ───────────────────────────────────────────────────────────
-    feature(
-        "theremin.enabled",
-        Kind::Bool,
-        "The ToF theremin may be picked up at all (robot.theremin still starts it)",
-    ),
-    entry("theremin.socket", Kind::Text, "tofd's depth stream"),
-    entry(
-        "theremin.near_m",
-        Kind::Float,
-        "Nearest playable range, metres",
-    ),
-    entry(
-        "theremin.far_m",
-        Kind::Float,
-        "Farthest playable range, metres",
-    ),
-    entry(
-        "theremin.min_zones",
-        Kind::Integer,
-        "Fewest zones that make a hand",
-    ),
-    entry(
-        "theremin.statuses",
-        Kind::IntegerList,
-        "ToF status bytes believed — this list decides how far the instrument reaches",
-    ),
-    entry(
-        "theremin.hold_ms",
-        Kind::Integer,
-        "How long a note rides over a sensor dropout, milliseconds",
-    ),
     // ── [audio] ──────────────────────────────────────────────────────────────
     feature(
         "audio.enabled",
         Kind::Bool,
-        "The voice and the microphone; off walks identically and stays quiet",
+        "Audio playback; off walks identically and stays quiet",
     ),
     entry("audio.device", Kind::Text, "ALSA playback device"),
     entry("audio.bank", Kind::Text, "Voice bank directory"),
@@ -403,26 +370,6 @@ pub const REGISTRY: &[Entry] = &[
         "audio.greet",
         Kind::Bool,
         "Quack once at startup — the audible \"robotd is running\"",
-    ),
-    feature(
-        "audio.pet_detect",
-        Kind::TriBool,
-        "Coo when petted; unset means off — an opt-in",
-    ),
-    entry(
-        "audio.pet_model",
-        Kind::OptionalPath,
-        "Petting classifier; unset = the release's copy",
-    ),
-    entry(
-        "audio.pet_enter_threshold",
-        Kind::Float,
-        "Petting starts above this probability",
-    ),
-    entry(
-        "audio.pet_exit_threshold",
-        Kind::Float,
-        "…and ends below this one (hysteresis)",
     ),
     // ── [media] ──────────────────────────────────────────────────────────────
     feature(
@@ -623,10 +570,8 @@ mod tests {
                 "safety.overtemp_protection",
                 "detect.enabled",
                 "chorale.accept",
-                "theremin.enabled",
                 "audio.enabled",
                 "audio.greet",
-                "audio.pet_detect",
                 "media.camera",
                 "media.quality",
             ]

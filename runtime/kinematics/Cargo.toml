@@ -1,0 +1,16 @@
+# MJCF-driven forward kinematics shared by robotd.
+# Parses the embedded geometry once and precompiles site chains for repeated queries.
+[package]
+name = "kinematics"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+roxmltree = "0.21"
+thiserror.workspace = true
+
+[dev-dependencies]
+serde = { workspace = true }
+serde_json.workspace = true

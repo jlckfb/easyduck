@@ -9,7 +9,6 @@ enabled = true
 mode = "walk"
 [safety]
 [audio]
-[theremin]
 [detect]
 [chorale]
 [media]

@@ -1,39 +1,9 @@
-//! The duck's voice, held open: a block-wise synth driven by live parameters.
+//! Streaming audio synthesis with persistent oscillator and filter state.
 //!
-//! Every other sound in this crate is a *recipe* — a whole vocalisation rendered offline
-//! from a frequency curve the recipe writes down in advance ([`crate::voices`]). That is
-//! the right shape for a quack, and the wrong one for anything the robot must sing *while*
-//! something outside it moves. The ToF theremin's pitch is a hand's distance, known only
-//! 15 times a second and never in advance, so the frequency curve cannot be written down:
-//! it has to be integrated as it arrives.
-//!
-//! So this is the same synth, turned inside out. [`Stream::block`] renders a short block
-//! of audio from the parameters as they stand *now* and carries every piece of state that
-//! spans blocks — oscillator phase, LFO phase, the jitter and breath filters, and the
-//! slewed parameters themselves — across the call. Concatenating its blocks gives one
-//! continuous signal with no seam, whatever the block sizes were.
-//!
-//! **It is the same duck.** Not a resample of the bank and not a second voice: the
-//! harmonic weights are [`Personality::harmonics`], the vibrato, jitter, breath and quack-AM
-//! are that personality's, and [`Stream::wheee`] applies the same softening the joy-ride
-//! recipe does ([`crate::voices::wheee_segments`]). A duck's theremin sounds like that
-//! duck's wheee, held for as long as the hand stays.
-//!
-//! ## What is different from the offline path, and why
-//!
-//! - **Normalisation is static.** A recipe normalises the finished buffer to a peak; a
-//!   stream has no finished buffer, and a per-block normalise would pump the level with
-//!   every block. The gain is derived from the harmonic weights instead — worst-case
-//!   in-phase sum — and a `tanh` soft clip catches what the AM and breath add on top.
-//! - **Parameters slew.** Depth arrives every ~67 ms and the mouth servo is slower still;
-//!   stepping the frequency on frame boundaries would stair-step audibly. Each parameter
-//!   glides toward its target with a one-pole filter at audio rate, so a 15 Hz input
-//!   produces a continuous glide.
-//! - **The jitter and breath filters are recursive.** The offline versions convolve a
-//!   whole buffer (a centred moving average, a normalised leaky integrator); neither can
-//!   see the future or the past here, so both become one-pole filters with the same time
-//!   constant. The character is the same; the sample values are not, which is why nothing
-//!   in this file is pinned against the bank.
+//! [`Stream::block`] renders audio from current parameters without discontinuities
+//! between blocks. Pitch, level, mouth and formant targets are slewed at audio
+//! rate. Personality harmonics, vibrato, jitter and breath retain the voice used
+//! by the generated sound bank; [`Stream::wheee`] applies the joy-ride timbre.
 
 use crate::personality::Personality;
 use crate::rng::Rng;
@@ -41,8 +11,7 @@ use crate::synth::SR;
 
 /// How fast a parameter reaches a new target, as a time constant in seconds.
 ///
-/// Pitch glides slowest: it is the one a listener hears as a *slide*, and the ToF's 67 ms
-/// between frames is long enough that a faster constant reintroduces the stair-step.
+/// Pitch glides toward its target to avoid audible parameter steps.
 const PITCH_TAU_S: f64 = 0.045;
 /// Level, and so the note's attack and release. Fast enough to feel keyed, slow enough that
 /// a hand leaving the frame is a fade rather than a click.
@@ -220,8 +189,7 @@ impl Stream {
     /// The joy-ride voice: the same softening [`crate::voices::wheee_segments`] applies.
     ///
     /// Less vibrato and less quack-buzz so a long glide stays clean, plus the ride's
-    /// excitement wobble. This is the constructor the theremin uses — the point is that a
-    /// held theremin note and a held `wheee` are recognisably the same sound.
+    /// excitement wobble. Sustained notes retain the same voice as the sound bank.
     pub fn wheee(p: &Personality, variant: u32) -> Self {
         let mut s = Self::new(p, "wheee", variant);
         s.vibrato_depth = p.vibrato_depth * 0.5;
@@ -286,7 +254,7 @@ impl Stream {
     /// own [`Personality::formant_n`].
     ///
     /// Separate from [`Stream::set`] because it is a different *kind* of parameter — the
-    /// theremin has no vowels and passes only pitch, level and mouth. Slewed like the rest, so
+    /// base control accepts pitch, level and mouth. Slewed like the rest, so
     /// a change of syllable is a movement rather than a click.
     pub fn set_formant_shift(&mut self, harmonics: f64) {
         self.formant_shift_target = harmonics.clamp(-FORMANT_RANGE, FORMANT_RANGE);
@@ -465,7 +433,7 @@ impl Stream {
 /// A duck's playable range, in hertz, low to high.
 ///
 /// Anchored on the personality rather than fixed: a low duck plays low. The span is the
-/// wheee's own — up to `top` times centre — so the theremin never asks the voice for a pitch
+/// wheee's own — up to `top` times centre — so the stream stays within the pitch range
 /// its recipes would not have used.
 ///
 /// Free-standing, not only a [`Stream`] method, because the caller that needs to *map* a
@@ -535,7 +503,7 @@ mod tests {
     }
 
     /// A long ride must stay finite and in range — the phase wrap and the soft clip are
-    /// both load-bearing for that, and a theremin is held for minutes.
+    /// both load-bearing for that, and a sustained voice can run for minutes.
     #[test]
     fn a_long_ride_stays_finite_and_bounded() {
         for seed in [0u32, 100, 3_405_691_582] {
@@ -821,7 +789,7 @@ mod tests {
     }
 
     /// Two seeds are two instruments, and the range follows the duck's own register — the
-    /// theremin must not flatten every duck onto one scale.
+    /// mapping must not flatten every duck onto one scale.
     #[test]
     fn the_range_follows_the_personality() {
         let a = Stream::wheee(&Personality::from_seed(100), 0).range_hz();

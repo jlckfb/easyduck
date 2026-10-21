@@ -11,7 +11,6 @@ mod control_owner;
 mod params;
 mod soc;
 mod sound;
-mod theremin;
 mod xgo;
 
 use std::path::PathBuf;
@@ -390,12 +389,6 @@ struct RobotState {
     /// accepting it into silence. Read once at startup, like the policies: the postinstall
     /// renders the bank and restarts robotd, so a bank cannot appear under a running one.
     has_voice: bool,
-    /// Whether a theremin can be picked up: the params allow one, and the depth stream is
-    /// actually delivering frames. Published by the loop rather than read once at startup,
-    /// because unlike a voice bank the sensor comes and goes — `tofd` restarts, the ToF
-    /// drops off the I²C bus — and an accepted theremin on a duck with no depth is a
-    /// feature that silently does nothing.
-    theremin_ready: AtomicBool,
     /// Whether this robot's config allows it to sing with others. Read once at startup, like the
     /// policies: `[chorale] accept`, false by default.
     chorale_accepted: bool,
@@ -448,7 +441,6 @@ impl RobotState {
             policy_error: ArcSwapOption::empty(),
             policies: ArcSwap::from_pointee(PolicyNames::of(&params.policy.resolved())),
             has_voice: params.audio.enabled && has_any_wav(&params.audio.bank),
-            theremin_ready: AtomicBool::new(false),
             chorale_accepted: params.chorale.accept,
             mode: AtomicU8::new(mode_code(params.policy.mode)),
             fallen: AtomicBool::new(false),
@@ -1294,11 +1286,6 @@ async fn control_loop<T: RobotIo>(
     let mut coast = Coast::new();
     let mut stopped_driving_at: Option<Instant> = None;
 
-    // Contact odometry, ticked at the loop's own rate on the sample the loop already
-    // read — the prototype ran it at 100 Hz on extra bus reads, which is exactly the
-    // bus pressure the spasms investigation taught this loop not to add.
-    let mut odometry = odometry::Odometry::alpha();
-
     // The sit-then-power-off sequence.
     let mut shutdown_sit: Option<Instant> = None;
     let mut powered_off = false;
@@ -1320,57 +1307,15 @@ async fn control_loop<T: RobotIo>(
     let limp_fall_pose = Duration::from_millis(params.safety.limp_fall_pose_ms);
     let mut limp_fall = LimpFall::Idle;
 
-    // The voice, and the ear. Both optional equipment: a robot without a codec or a bank
-    // walks identically — the player degrades to a debug line, and the mic worker is only
-    // spawned when configured, with its own retry loop when arecord flaps.
+    // Audio playback is optional; a missing codec or bank does not change walking.
     let mut voice = params
         .audio
         .enabled
         .then(|| sound::Sound::new(params.audio.bank.clone(), params.audio.device.clone()));
-    let pet: Option<pet_detect::worker::PetHandle> = if params.audio.enabled
-        && params.audio.pet_detect_resolved(params.policy.mode)
-        && let Some(model) = params.audio.pet_model_resolved()
-        && model.exists()
-    {
-        match pet_detect::worker::PetHandle::spawn(pet_detect::worker::PetConfig {
-            alsa_device: params.audio.capture_device(),
-            model_path: model.clone(),
-            enter_threshold: params.audio.pet_enter_threshold,
-            exit_threshold: params.audio.pet_exit_threshold,
-        }) {
-            Ok(handle) => {
-                tracing::warn!(model = %model.display(), "petting detection listening");
-                Some(handle)
-            }
-            Err(e) => {
-                // Not unhealthy: the classifier is a feature, not the robot. A missing
-                // model on a release that ships one is caught by the packaging tripwires.
-                tracing::warn!(error = %e, "petting detection unavailable");
-                None
-            }
-        }
-    } else {
-        // Configured on but nothing to run: a bench robotd, a board that predates the
-        // model, or audio off. Quietly so on purpose — the mic is optional equipment.
-        None
-    };
-
-    // The theremin. Its depth reader starts now and parks on `tofd`'s socket whether or not
-    // anyone ever asks for an instrument: one blocked read costs nothing, and connecting
-    // lazily would make the first arming window wait for a connection as well as for
-    // frames — a second of silence that reads as a broken feature. Off entirely when the
-    // params say so, or when audio is off, since a theremin with no voice is a mouth
-    // opening for no reason.
-    let mut theremin = (params.theremin.enabled && params.audio.enabled)
-        .then(|| theremin::Theremin::spawn(params.theremin.socket.clone(), params.theremin.hand()));
     // How far the beak is open for the chorale, slewed across ticks — see where it is written.
     let mut chorale_mouth = 0.0f64;
     // And how the head sways while singing, applied to the next tick's command.
     let mut chorale_head = [0.0f64; 4];
-
-    // The note the theremin is holding, kept across ticks so a hand leaving the frame fades
-    // the note at its own pitch instead of gliding to the bottom of the range on its way out.
-    let mut theremin_hz = 0.0f64;
 
     // The chorale. Off unless the config opted in — see `[chorale] accept`, and note that off
     // means putting nothing on the air rather than declining politely.
@@ -1455,7 +1400,6 @@ async fn control_loop<T: RobotIo>(
             // robot never was. A coasted tick is skipped too — repeating a stale sample
             // into the estimator would tell it the robot froze, which it did not.
             if safety.imu_ready() {
-                odometry.update(&fresh.positions, fresh.imu.quat);
             }
         }
         state.fallen.store(safety.fallen() || head_ground_elapsed>=0.15, Ordering::Relaxed);
@@ -1647,37 +1591,12 @@ async fn control_loop<T: RobotIo>(
             } else {
                 intents.wheee_hold()
             };
-            voice.theremin_settle();
+            voice.settle_singing();
             voice.wheee(hold);
             for tag in intents.take_sounds() {
                 voice.play(tag.as_str(), false);
             }
 
-            // Petting: coo, exactly when the prototype coos — not fallen, no scripted move
-            // in flight. The verdict is used bare here (not the armed fall gate): this is a
-            // sound cue, and cooing while face-down would be worse than staying quiet.
-            if let Some(pet) = pet.as_ref() {
-                while let Some(ev) = pet.try_recv_event() {
-                    match ev {
-                        pet_detect::PettingEvent::Start => {
-                            let calm =
-                                !safety.fallen() && controller.as_ref().is_none_or(|c| !c.busy());
-                            if calm {
-                                tracing::info!("petting started");
-                                voice.play("coo", false);
-                            } else {
-                                tracing::debug!("petting detected (ignored: busy or down)");
-                            }
-                        }
-                        pet_detect::PettingEvent::End => tracing::debug!("petting ended"),
-                    }
-                }
-                // Ambient sound events have no consumer until the autonomous brain arrives;
-                // surfaced at debug so mic tuning on a bench has data to look at.
-                while let Some(ev) = pet.try_recv_sound() {
-                    tracing::debug!(event = ?ev, "ambient sound");
-                }
-            }
         }
 
         // A drive-mode switch: `robot.setMode`, which the pad's held D-pad up sends.
@@ -2208,74 +2127,8 @@ async fn control_loop<T: RobotIo>(
         };
         state.moving.store(moving, Ordering::Relaxed);
 
-        // The theremin: a hand's distance in front of the beak, turned into a note and a
-        // mouth opening. Before the mouth is written, because while an instrument is up it
-        // *is* what the mouth is doing — the intent from a client is not competing with it.
-        let mut theremin_state = None;
-        if let Some(instrument) = theremin.as_mut() {
-            // Whether an instrument could be picked up right now, for the IPC side to
-            // refuse on. Republished every tick because the sensor can go away under a
-            // running daemon.
-            state.theremin_ready.store(
-                instrument.has_frames() && voice.is_some(),
-                Ordering::Relaxed,
-            );
-            if let Some(active) = intents.take_theremin_request() {
-                instrument.set_active(active);
-            }
-            // Nothing takes the instrument away but asking. Walking used to drop it, because
-            // a captured background is a picture of one spot — with no background there is
-            // nothing to invalidate, and a duck that plays while it walks is a feature.
-            let note = instrument.tick(tick_start);
-            match note {
-                Some(note) => {
-                    let mut block = note.state;
-                    // Silence keeps the last pitch rather than gliding to the bottom of the
-                    // range: a fade at the note you were playing is a note ending, and a fade
-                    // on the way down is a note falling over.
-                    let level = match note.closeness {
-                        Some(closeness) => {
-                            if let Some(voice) = voice.as_mut()
-                                && let Some(hz) = voice.theremin_hz_at(closeness)
-                            {
-                                theremin_hz = hz;
-                            }
-                            block.note_hz = Some(theremin_hz);
-                            1.0
-                        }
-                        None => 0.0,
-                    };
-                    if let Some(voice) = voice.as_mut() {
-                        // Idempotent, so this is also what picks the instrument up on the
-                        // first tick after the request — there is no separate start edge to
-                        // get wrong.
-                        if voice.theremin_start() {
-                            voice.theremin_set(theremin_hz, level, note.mouth);
-                        }
-                    }
-                    // Whatever the policy is doing, unlike the mouth *intent* below. The
-                    // mouth is not part of any policy, and a duck playing a theremin while
-                    // sitting — which is how anyone will first try this — has to be able to
-                    // open its beak: gating on `driving` made the visible half of the whole
-                    // gesture silently absent on a sitting robot.
-                    if snapshot.enabled && bringup == Bringup::Ready {
-                        targets[duck_control::model::MOUTH_INDEX] =
-                            duck_control::model::mouth_target(note.mouth);
-                    }
-                    theremin_state = Some(block);
-                }
-                // The instrument is down. Putting the voice down too is idempotent, so this
-                // covers both "it was just dropped" and "there has never been one".
-                None => {
-                    if let Some(voice) = voice.as_mut() {
-                        voice.theremin_stop();
-                    }
-                }
-            }
-        }
-
         // The chorale: where in the piece the ensemble is, and this duck's line of it. Before the
-        // mouth, like the theremin, because while a duck is singing its beak is doing that.
+        // mouth, because while a duck is singing its beak is doing that.
         let mut chorale_state = None;
         if let Some(ensemble) = chorale.as_mut() {
             if let Some((active, piece_pin)) = intents.take_chorale_request() {
@@ -2384,7 +2237,7 @@ async fn control_loop<T: RobotIo>(
         // The mouth is not part of any policy; the intent is the only thing that moves it.
         // Only while driving — a held or homing robot keeps whatever its hold pose says, so
         // a restart cannot snap a mouth.
-        if (driving || (xgo_profile && bringup == Bringup::Ready)) && theremin_state.is_none() && chorale_state.is_none() {
+        if (driving || (xgo_profile && bringup == Bringup::Ready)) && chorale_state.is_none() {
             targets[duck_control::model::MOUTH_INDEX] =
                 if xgo_profile {
                     DEFAULT_POSITION[duck_control::model::MOUTH_INDEX]+xgo_mouth*30.0f64.to_radians()
@@ -2440,11 +2293,6 @@ async fn control_loop<T: RobotIo>(
                 },
                 joints: sensors.positions.to_vec(),
                 targets: targets.to_vec(),
-                odom: proto::OdomState {
-                    position: odometry.position(),
-                    yaw: odometry.yaw(),
-                },
-                theremin: theremin_state.clone(),
                 chorale: chorale_state.clone(),
             });
         }
@@ -3062,39 +2910,6 @@ fn dispatch(
             proto::Response::ok(Some(id), &result)
         }
 
-        // Picking the theremin up, or putting it down. Refused here for what this side can
-        // already know — no voice, no depth frames, the feature switched off — and *not* for
-        // circumstance: the loop puts the instrument down by itself when the robot starts
-        // walking or goes over, which is a thing that happens after the answer.
-        //
-        // Note what the answer does not promise: arming. That takes about half a second of
-        // depth frames, because the theremin's zero is whatever is in front of the duck at
-        // that moment, and one frame is not a background. Whether it took, and the one
-        // refusal a player will actually hit — a hand already in front of the beak — arrive
-        // in `robot.state`'s theremin block.
-        proto::Call::RobotTheremin(p) => {
-            let result = if !state.has_voice {
-                proto::ThereminResult {
-                    accepted: false,
-                    reason: Some("this robot has no voice to play a theremin in".to_owned()),
-                }
-            } else if p.active && !state.theremin_ready.load(Ordering::Relaxed) {
-                proto::ThereminResult {
-                    accepted: false,
-                    reason: Some(
-                        "no depth frames — the ToF sensor is not delivering (is tofd running?)"
-                            .to_owned(),
-                    ),
-                }
-            } else {
-                intents.request_theremin(p.active);
-                proto::ThereminResult {
-                    accepted: true,
-                    reason: None,
-                }
-            };
-            proto::Response::ok(Some(id), &result)
-        }
 
         // A sound is queued for the loop's next tick. Never refused for *circumstance* —
         // unlike a skill it moves nothing, and a chirp out of a fallen robot is

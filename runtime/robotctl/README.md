@@ -26,7 +26,7 @@ robotctl monitor --hz 10 --json
 
 主控 socket 默认为 `/run/robotd.sock`，可通过 `--robot-socket` 指定其他路径。`monitor --json` 每行输出一个 JSON 对象，可重定向保存；`Ctrl-C` 退出。
 
-监控页显示主控状态、策略、关节目标和反馈、IMU、供电信息及终端 3D 姿态。手柄原始事件需要 `padd` 的事件流；深度画面需要另行提供 ToF 服务。
+监控页显示主控状态、策略、关节目标和反馈、IMU、供电信息及终端 3D 姿态。手柄原始事件需要 `padd` 的事件流。
 
 | 监控按键 | 用途 |
 | --- | --- |
@@ -34,7 +34,7 @@ robotctl monitor --hz 10 --json
 | 上下方向键、`j` / `k` | 滚动关节列表 |
 | `PageUp` / `PageDown` / `Home` | 翻页或回到开头 |
 | `u` | 切换角度单位 |
-| `p` / `t` / `d` | 切换手柄、深度、3D 显示 |
+| `p` / `d` | 切换手柄、3D 显示 |
 | 左右方向键、`[` / `]` | 旋转 3D 视角 |
 
 `assets/duck.bin` 是编译时嵌入的终端显示网格，不是动作模型；运行时无需另行复制它。3D 图反映反馈数据，不代替实物方向核对。
@@ -61,7 +61,6 @@ sudo robotctl configure --file /etc/robot/robotd.toml
 | `robot look <x> <y> <z>` | 请求头部转向；坐标为躯干前、左、上，单位米 |
 | `quack` | 请求主控播放叫声 |
 | `chorale` | 请求合唱，需启用配置；可能带动头部和嘴部 |
-| `theremin` | 请求体感乐器，需深度数据服务和对应配置 |
 | `health` / `version` | 汇总多个服务状态；缺失的服务会显示不可达，不能据此单独认定舵机故障 |
 | `net` / `system` / `pad` | 保留的客户端接口，需要额外的 `configd`；本软件库未提供该服务 |
 | `update` | 保留的更新客户端，需要额外的 `updaterd`；本软件库未提供该服务 |

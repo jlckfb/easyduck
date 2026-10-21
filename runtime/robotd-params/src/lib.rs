@@ -26,7 +26,6 @@ pub struct Params {
     pub policy: PolicyParams,
     pub safety: SafetyParams,
     pub audio: AudioParams,
-    pub theremin: ThereminParams,
     pub chorale: ChoraleParams,
     pub media: MediaParams,
     pub detect: DetectParams,
@@ -372,73 +371,13 @@ pub struct ChoraleParams {
     pub accept: bool,
 }
 
-/// `[theremin]` — the ToF theremin: what counts as a hand, and where the depth frames come
-/// from.
-///
-/// The interesting field is `statuses`, and it is the reason this section exists at all. ST
-/// documents 5 and 9 as "range valid", and a build that believes only those stops seeing a
-/// hand at about 30 cm on this sensor — past that a moving hand comes back as 4 or 13,
-/// *consistency failed*, carrying a distance that is fine for a pitch. That took a bench
-/// session to find, so the set is configurable: a duck whose theremin has a short reach wants
-/// more codes in, and one that plays phantom notes at nothing wants fewer.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields, default)]
-pub struct ThereminParams {
-    /// Master switch. On by default: the instrument still has to be picked up with
-    /// `robot.theremin`, so what this turns off is the *ability* to, on a duck where the
-    /// feature is unwanted or the sensor is known bad.
-    pub enabled: bool,
-    /// `tofd`'s depth stream.
-    pub socket: PathBuf,
-    /// Nearest playable range, metres.
-    pub near_m: f64,
-    /// Farthest playable range, metres.
-    pub far_m: f64,
-    /// Fewest zones that make a hand.
-    pub min_zones: usize,
-    /// ST status bytes whose distance is believed. See the section docs — this is the one
-    /// that decides how far the instrument reaches.
-    pub statuses: Vec<u8>,
-    /// How long a note is held through a sensor dropout, milliseconds. This is what keeps a
-    /// flickering zone from chopping a note into gravel.
-    pub hold_ms: u64,
-}
-
-impl Default for ThereminParams {
-    fn default() -> Self {
-        let hand = kinematics::hand::Config::default();
-        Self {
-            enabled: true,
-            socket: PathBuf::from(duck_ipc_proto::socket::TOF),
-            near_m: hand.near_m,
-            far_m: hand.far_m,
-            min_zones: hand.min_zones,
-            statuses: hand.statuses,
-            hold_ms: hand.hold.as_millis() as u64,
-        }
-    }
-}
-
-impl ThereminParams {
-    /// The hand-detection config these params describe.
-    pub fn hand(&self) -> kinematics::hand::Config {
-        kinematics::hand::Config {
-            near_m: self.near_m,
-            far_m: self.far_m,
-            min_zones: self.min_zones,
-            statuses: self.statuses.clone(),
-            hold: std::time::Duration::from_millis(self.hold_ms),
-        }
-    }
-}
-
-/// `[audio]` — the voice and the microphone. All optional equipment: a robot without a
+/// `[audio]` — audio playback. All optional equipment: a robot without a
 /// codec (or a bank) walks identically and stays quiet, so nothing here reaches a health
 /// verdict.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, default)]
 pub struct AudioParams {
-    /// Master switch: no sounds, no mic worker.
+    /// Master switch for audio playback.
     pub enabled: bool,
     /// ALSA playback device — the TLV320AIC3104 codec.
     pub device: String,
@@ -449,16 +388,6 @@ pub struct AudioParams {
     /// it is the audible "robotd is running"; off for anyone who restarts the daemon all
     /// day and would rather it did so quietly.
     pub greet: bool,
-    /// Listen for petting on the onboard mic and coo about it. Absent means **off**: the
-    /// per-mode resolution the prototype shipped (on for walking) cooed at every incidental
-    /// head scratch, which wore thin fast. Set `true` to opt in.
-    pub pet_detect: Option<bool>,
-    /// The petting classifier. Absent means the release's copy; the literal `"none"`
-    /// disables it outright.
-    pub pet_model: Option<PathBuf>,
-    /// Probability above which petting starts, and below which it ends (hysteresis).
-    pub pet_enter_threshold: f32,
-    pub pet_exit_threshold: f32,
 }
 
 impl Default for AudioParams {
@@ -468,43 +397,6 @@ impl Default for AudioParams {
             device: "plughw:aic3104".to_owned(),
             bank: PathBuf::from("/var/lib/robot/sounds"),
             greet: true,
-            pet_detect: None,
-            pet_model: None,
-            pet_enter_threshold: 0.95,
-            pet_exit_threshold: 0.85,
-        }
-    }
-}
-
-impl AudioParams {
-    /// Whether the mic worker runs, resolved against the drive mode.
-    pub fn pet_detect_resolved(&self, _mode: Mode) -> bool {
-        // Off unless asked for, in either mode. It used to resolve per mode as the prototype's
-        // launcher did (on for walking, off for the roller) — and cooing at every incidental
-        // head scratch turned out to be more annoying than charming in daily use. The mode is
-        // still passed so flipping this back is a one-line change, not a signature change.
-        self.pet_detect.unwrap_or(false)
-    }
-
-    /// The capture PCM for the mic worker: the playback device with subdevice 0. Only
-    /// appended when the operator has not already spelled a subdevice out — `plughw:aic3104`
-    /// in `robotd.toml` is the default and needs it, but the equally natural full spec
-    /// `plughw:aic3104,0` would otherwise become `plughw:aic3104,0,0`, which no card
-    /// answers to. That lands the worker in its restart loop for the life of the daemon.
-    pub fn capture_device(&self) -> String {
-        if self.device.contains(',') {
-            self.device.clone()
-        } else {
-            format!("{},0", self.device)
-        }
-    }
-
-    /// The classifier path, or `None` when disabled with the `"none"` sentinel.
-    pub fn pet_model_resolved(&self) -> Option<PathBuf> {
-        match &self.pet_model {
-            Some(p) if is_none_sentinel(p) => None,
-            Some(p) => Some(p.clone()),
-            None => Some(PathBuf::from(RELEASE_DIR).join("models/pet_detect.onnx")),
         }
     }
 }
@@ -1229,30 +1121,25 @@ fn without_unknown_keys(text: &str) -> Option<(Result<Params, toml::de::Error>, 
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn playback_defaults_have_no_removed_sensor_options() {
+        let params = Params::default();
+        let value = serde_json::to_value(&params).expect("serialize defaults");
+        assert!(value.get("theremin").is_none());
+        let audio = value["audio"].as_object().expect("audio settings");
+        for key in ["pet_detect", "pet_model", "pet_enter_threshold", "pet_exit_threshold"] {
+            assert!(!audio.contains_key(key), "removed option: {key}");
+        }
+        assert!(params.audio.enabled);
+        assert!(params.audio.greet);
+    }
     use super::*;
 
     fn write(dir: &std::path::Path, body: &str) -> std::path::PathBuf {
         let path = dir.join("robotd.toml");
         std::fs::write(&path, body).unwrap();
         path
-    }
-
-    /// The capture device is derived from the playback one, and the derivation must be
-    /// idempotent: an operator who writes the full ALSA spec gets the device they wrote,
-    /// not one with a second subdevice glued on that no card answers to.
-    #[test]
-    fn the_capture_device_does_not_double_its_subdevice() {
-        let plain = AudioParams {
-            device: "plughw:aic3104".to_owned(),
-            ..AudioParams::default()
-        };
-        assert_eq!(plain.capture_device(), "plughw:aic3104,0");
-
-        let spelled_out = AudioParams {
-            device: "plughw:aic3104,0".to_owned(),
-            ..AudioParams::default()
-        };
-        assert_eq!(spelled_out.capture_device(), "plughw:aic3104,0");
     }
 
     /// An unprovisioned board must still come up. A daemon that refuses to start because a

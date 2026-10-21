@@ -168,13 +168,6 @@ impl Model {
             "policy.ground_pick_period" => float(policy.ground_pick_period),
             "policy.ground_pick_action_scale" => float(policy.ground_pick_action_scale),
             "media.bitrate" => Some(params.media.bitrate_resolved().to_string()),
-            "audio.pet_detect" => Some(
-                params
-                    .audio
-                    .pet_detect_resolved(params.policy.mode)
-                    .to_string(),
-            ),
-            "audio.pet_model" => path(params.audio.pet_model_resolved()),
             _ => None,
         }
     }
@@ -883,7 +876,6 @@ mod tests {
         assert_eq!(find("control.hz").effective(), "50");
         assert_eq!(find("policy.mode").effective(), "walk");
         assert_eq!(find("safety.limp_fall").effective(), "true");
-        assert_eq!(find("audio.pet_detect").effective(), "unset");
     }
 
     /// Editing must not eat the file: comments, ordering and untouched keys all survive a
@@ -944,10 +936,10 @@ mod tests {
         assert!(out.contains("# the board's story"), "{out}");
     }
 
-    /// The toggles: bool flips, tri-state cycles through auto, choices wrap around.
+    /// The toggles: bool flips and choices wrap around.
     #[test]
     fn toggling_produces_the_next_sensible_value() {
-        let mut m = model("");
+        let m = model("");
         let toggle = |m: &Model, key: &str| {
             let rows = m.rows();
             let row = rows.iter().find(|r| r.entry.key == key).expect("known");
@@ -955,12 +947,6 @@ mod tests {
         };
         assert_eq!(toggle(&m, "audio.enabled").as_deref(), Some("false"));
         assert_eq!(toggle(&m, "policy.mode").as_deref(), Some("roller"));
-        // Tri-state: unset → on → off → unset.
-        assert_eq!(toggle(&m, "audio.pet_detect").as_deref(), Some("true"));
-        m.edit(entry("audio.pet_detect"), "true").expect("edits");
-        assert_eq!(toggle(&m, "audio.pet_detect").as_deref(), Some("false"));
-        m.edit(entry("audio.pet_detect"), "false").expect("edits");
-        assert_eq!(toggle(&m, "audio.pet_detect").as_deref(), Some("unset"));
         // Numbers are typed, not toggled.
         assert_eq!(toggle(&m, "control.hz"), None);
     }
@@ -1157,18 +1143,8 @@ mod tests {
         let walk = hint(&m, "policy.walk").expect("resolves");
         assert!(walk.contains("alpha_walking"), "{walk}");
         assert_eq!(hint(&m, "policy.legs_lowpass").as_deref(), Some("0.7"));
-        assert_eq!(
-            hint(&m, "audio.pet_detect").as_deref(),
-            Some("false"),
-            "petting is an opt-in now, in every mode"
-        );
         // Flip the mode and the hints follow — they are resolved through the pending state.
         m.edit(entry("policy.mode"), "roller").expect("edits");
-        assert_eq!(
-            hint(&m, "audio.pet_detect").as_deref(),
-            Some("false"),
-            "the roller does not"
-        );
         let crouch = hint(&m, "policy.ground_pick").expect("resolves");
         assert!(
             crouch.contains("crouch") || crouch.contains("roller"),
@@ -1311,7 +1287,6 @@ mod tests {
                 "safety",
                 "detect",
                 "chorale",
-                "theremin",
                 "audio",
                 "media"
             ]

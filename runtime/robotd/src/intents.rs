@@ -16,13 +16,9 @@ pub const MODE_NONE: u8 = u8::MAX;
 /// cannot both be pending — they are alternatives, and the last one asked for wins.
 const POWER_NONE: u8 = 0;
 
-/// Encodings for [`Intents::theremin`]. An edge rather than a level, and for a concrete
-/// reason: the loop puts the instrument down by itself when the robot starts walking, and a
-/// level slot still reading "up" would pick it straight back up with a background of
-/// somewhere the duck no longer is.
-const THEREMIN_NONE: u8 = 0;
-const THEREMIN_UP: u8 = 1;
-const THEREMIN_DOWN: u8 = 2;
+const CHORALE_NONE: u8 = 0;
+const CHORALE_START: u8 = 1;
+const CHORALE_STOP: u8 = 2;
 const POWER_INIT: u8 = 1;
 const POWER_RELAX: u8 = 2;
 use std::time::{Duration, Instant};
@@ -179,8 +175,6 @@ pub struct Intents {
     /// (`HOME_RAMP`). It sits next to [`Self::power`] rather than inside it because that slot
     /// is a single byte, and it is cleared by the same read that takes the request.
     power_ms: std::sync::atomic::AtomicU64,
-    /// A pending pick-up or put-down for the ToF theremin. See [`THEREMIN_NONE`].
-    theremin: AtomicU8,
     /// The same, for the chorale.
     chorale: AtomicU8,
     /// The piece pinned by the pending chorale request, 0 for none. Written before the
@@ -270,8 +264,7 @@ impl Intents {
             enabled: AtomicBool::new(false),
             power: AtomicU8::new(POWER_NONE),
             power_ms: std::sync::atomic::AtomicU64::new(0),
-            theremin: AtomicU8::new(THEREMIN_NONE),
-            chorale: AtomicU8::new(THEREMIN_NONE),
+            chorale: AtomicU8::new(CHORALE_NONE),
             chorale_piece: AtomicU8::new(0),
             chorale_heard: std::sync::Mutex::new(Vec::new()),
             skills: std::sync::atomic::AtomicU32::new(0),
@@ -489,7 +482,7 @@ impl Intents {
         self.chorale_piece
             .store(piece.unwrap_or(0), Ordering::Relaxed);
         self.chorale.store(
-            if active { THEREMIN_UP } else { THEREMIN_DOWN },
+            if active { CHORALE_START } else { CHORALE_STOP },
             Ordering::Relaxed,
         );
     }
@@ -500,9 +493,9 @@ impl Intents {
             0 => None,
             id => Some(id),
         };
-        match self.chorale.swap(THEREMIN_NONE, Ordering::Relaxed) {
-            THEREMIN_UP => Some((true, piece)),
-            THEREMIN_DOWN => Some((false, None)),
+        match self.chorale.swap(CHORALE_NONE, Ordering::Relaxed) {
+            CHORALE_START => Some((true, piece)),
+            CHORALE_STOP => Some((false, None)),
             _ => None,
         }
     }
@@ -522,23 +515,6 @@ impl Intents {
     /// Everything heard since the last tick.
     pub fn take_chorale_heard(&self) -> Vec<duck_ipc_proto::ChoraleHeard> {
         std::mem::take(&mut *self.chorale_heard.lock().expect("not poisoned"))
-    }
-
-    /// Ask for the theremin to be picked up (`true`) or put down (`false`).
-    pub fn request_theremin(&self, active: bool) {
-        self.theremin.store(
-            if active { THEREMIN_UP } else { THEREMIN_DOWN },
-            Ordering::Relaxed,
-        );
-    }
-
-    /// The pending theremin request, cleared by the read.
-    pub fn take_theremin_request(&self) -> Option<bool> {
-        match self.theremin.swap(THEREMIN_NONE, Ordering::Relaxed) {
-            THEREMIN_UP => Some(true),
-            THEREMIN_DOWN => Some(false),
-            _ => None,
-        }
     }
 
     pub fn take_power_request(&self) -> Option<PowerRequest> {
