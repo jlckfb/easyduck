@@ -1,0 +1,107 @@
+{
+  "head_pitch.stl": {
+    "sha256": "aef526ce7a58f65e4efca3f6c4a0abcd6b4a2e54a51b3949502d325472fdfcb1",
+    "matching_upstream_paths": [
+      "assets/head_pitch.stl"
+    ],
+    "license_status": "No explicit redistribution license recorded."
+  },
+  "head_roll.stl": {
+    "sha256": "dcbe8ae093a842399e94eecc6f41a533575df9e8367f26690d737a9d38f8b327",
+    "matching_upstream_paths": [
+      "assets/head_roll.stl"
+    ],
+    "license_status": "No explicit redistribution license recorded."
+  },
+  "head_yaw.stl": {
+    "sha256": "a509eadd3172b79826b635bdb1b239b567b71f1fcf6c665eb9d2d3fc455cebe1",
+    "matching_upstream_paths": [
+      "assets/head_yaw.stl"
+    ],
+    "license_status": "No explicit redistribution license recorded."
+  },
+  "left_ankle.stl": {
+    "sha256": "305c7e2900136c4d3e525ebdde4dd8b64c254ab3e92a4eb6c296ec1d84af0566",
+    "matching_upstream_paths": [
+      "assets/left_ankle.stl"
+    ],
+    "license_status": "No explicit redistribution license recorded."
+  },
+  "left_hip_pitch.stl": {
+    "sha256": "5948191de26a4f209b7dcc7d18e9b1928920c01b687368cf77769d14553fa356",
+    "matching_upstream_paths": [
+      "assets/left_hip_pitch.stl"
+    ],
+    "license_status": "No explicit redistribution license recorded."
+  },
+  "left_hip_roll.stl": {
+    "sha256": "4745eb3c27645971c1a92a067cffafb024934660f0bd887415e73462f65440d4",
+    "matching_upstream_paths": [
+      "assets/left_hip_roll.stl"
+    ],
+    "license_status": "No explicit redistribution license recorded."
+  },
+  "left_hip_yaw.stl": {
+    "sha256": "34bcf92d98d9ca2fef20ee5ef70d05ca71e05079e88a08d30d7a791e208be508",
+    "matching_upstream_paths": [
+      "assets/left_hip_yaw.stl"
+    ],
+    "license_status": "No explicit redistribution license recorded."
+  },
+  "left_knee.stl": {
+    "sha256": "0a879a561f2d46b8f91f201e4530cfa1b8de6fc6263f3dcf041b3479f14de832",
+    "matching_upstream_paths": [
+      "assets/left_knee.stl"
+    ],
+    "license_status": "No explicit redistribution license recorded."
+  },
+  "neck_pitch.stl": {
+    "sha256": "48fd73c630b929a68dd7a192bee3920f5eed478d48948067f49223abb9297984",
+    "matching_upstream_paths": [
+      "assets/neck_pitch.stl"
+    ],
+    "license_status": "No explicit redistribution license recorded."
+  },
+  "right_ankle.stl": {
+    "sha256": "1f2a6b317277be4b6f22802e6fa74b8f0ffab502cb8bd36dacb9e13ab0896a2f",
+    "matching_upstream_paths": [
+      "assets/right_ankle.stl"
+    ],
+    "license_status": "No explicit redistribution license recorded."
+  },
+  "right_hip_pitch.stl": {
+    "sha256": "e580ffa06a66c0143a0eebdb9f346304bde98c754dec1af2e9ad2318038f71a7",
+    "matching_upstream_paths": [
+      "assets/right_hip_pitch.stl"
+    ],
+    "license_status": "No explicit redistribution license recorded."
+  },
+  "right_hip_roll.stl": {
+    "sha256": "6f709cd1e2caf44c9c6dde112a8e8d8ac0bf1ef97b3542801b9c9deed08cd09c",
+    "matching_upstream_paths": [
+      "assets/right_hip_roll.stl"
+    ],
+    "license_status": "No explicit redistribution license recorded."
+  },
+  "right_hip_yaw.stl": {
+    "sha256": "a27fa340a4f7ae5a6fbb0224feb2203cb1c62827a20db786da022cb9c9abd12d",
+    "matching_upstream_paths": [
+      "assets/right_hip_yaw.stl"
+    ],
+    "license_status": "No explicit redistribution license recorded."
+  },
+  "right_knee.stl": {
+    "sha256": "644e3fcc3b9b4815f8a5185aa2c4597cc54afcfdc876e42d5f9f04c0838c830d",
+    "matching_upstream_paths": [
+      "assets/right_knee.stl"
+    ],
+    "license_status": "No explicit redistribution license recorded."
+  },
+  "trunk_base.stl": {
+    "sha256": "7df63591596f4cf627c80e78ac5e37dff889c67f63c9f2a726e61899d3c358c3",
+    "matching_upstream_paths": [
+      "assets/trunk_base.stl"
+    ],
+    "license_status": "No explicit redistribution license recorded."
+  }
+}

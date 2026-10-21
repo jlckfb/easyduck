@@ -1,0 +1,15 @@
+[Unit]
+Description=XGODUCK visual servo and IMU calibration
+After=network.target
+Conflicts=robotd.service padd.service xgoduck-web.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/robot/calibration
+ExecStart=/usr/bin/python3 /opt/robot/calibration/server.py
+Restart=no
+TimeoutStopSec=8
+KillSignal=SIGTERM
+
+[Install]
+WantedBy=multi-user.target

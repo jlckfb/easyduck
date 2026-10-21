@@ -1,0 +1,789 @@
+{
+  "source_sha256": "9bd8f7f42aa654fbd9daf75aa27c9ba363a4684dbac68efb93018dac8b39f388",
+  "source": "training_robot_walk.xml",
+  "meshes": {
+    "trunk_base": {
+      "file": "trunk_base.stl",
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    "left_hip_yaw": {
+      "file": "left_hip_yaw.stl",
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    "left_hip_roll": {
+      "file": "left_hip_roll.stl",
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    "left_hip_pitch": {
+      "file": "left_hip_pitch.stl",
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    "left_knee": {
+      "file": "left_knee.stl",
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    "left_ankle": {
+      "file": "left_ankle.stl",
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    "neck_pitch": {
+      "file": "neck_pitch.stl",
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    "head_pitch": {
+      "file": "head_pitch.stl",
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    "head_yaw": {
+      "file": "head_yaw.stl",
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    "head_roll": {
+      "file": "head_roll.stl",
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    "right_hip_yaw": {
+      "file": "right_hip_yaw.stl",
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    "right_hip_roll": {
+      "file": "right_hip_roll.stl",
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    "right_hip_pitch": {
+      "file": "right_hip_pitch.stl",
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    "right_knee": {
+      "file": "right_knee.stl",
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    "right_ankle": {
+      "file": "right_ankle.stl",
+      "scale": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    }
+  },
+  "root": {
+    "name": "trunk_base",
+    "pos": [
+      0,
+      0,
+      0
+    ],
+    "quat": [
+      1.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "joint": null,
+    "geoms": [
+      {
+        "mesh": "trunk_base",
+        "pos": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "quat": [
+          1.0,
+          0.0,
+          0.0,
+          0.0
+        ]
+      }
+    ],
+    "children": [
+      {
+        "name": "yaw2roll",
+        "pos": [
+          0.02,
+          0.0175,
+          -0.026
+        ],
+        "quat": [
+          -2.59734e-06,
+          0.707105,
+          -0.707108,
+          2.59735e-06
+        ],
+        "joint": {
+          "name": "left_hip_yaw",
+          "axis": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "pos": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "geoms": [
+          {
+            "mesh": "left_hip_yaw",
+            "pos": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "quat": [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ]
+          }
+        ],
+        "children": [
+          {
+            "name": "hip_l",
+            "pos": [
+              0.0,
+              -0.0145,
+              0.0145
+            ],
+            "quat": [
+              0.499998,
+              0.5,
+              -0.5,
+              0.500002
+            ],
+            "joint": {
+              "name": "left_hip_roll",
+              "axis": [
+                0.0,
+                0.0,
+                1.0
+              ],
+              "pos": [
+                0.0,
+                0.0,
+                0.0
+              ]
+            },
+            "geoms": [
+              {
+                "mesh": "left_hip_roll",
+                "pos": [
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "quat": [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ]
+              }
+            ],
+            "children": [
+              {
+                "name": "upper_leg_left",
+                "pos": [
+                  0.0,
+                  0.0225,
+                  -0.0165
+                ],
+                "quat": [
+                  0.617278,
+                  -0.61728,
+                  0.344915,
+                  0.344916
+                ],
+                "joint": {
+                  "name": "left_hip_pitch",
+                  "axis": [
+                    0.0,
+                    0.0,
+                    1.0
+                  ],
+                  "pos": [
+                    0.0,
+                    0.0,
+                    0.0
+                  ]
+                },
+                "geoms": [
+                  {
+                    "mesh": "left_hip_pitch",
+                    "pos": [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    "quat": [
+                      1.0,
+                      0.0,
+                      0.0,
+                      0.0
+                    ]
+                  }
+                ],
+                "children": [
+                  {
+                    "name": "leg",
+                    "pos": [
+                      0.041977,
+                      0.0,
+                      0.0
+                    ],
+                    "quat": [
+                      -3.20658e-06,
+                      0.872964,
+                      -0.487784,
+                      1.79173e-06
+                    ],
+                    "joint": {
+                      "name": "left_knee",
+                      "axis": [
+                        0.0,
+                        0.0,
+                        1.0
+                      ],
+                      "pos": [
+                        0.0,
+                        0.0,
+                        0.0
+                      ]
+                    },
+                    "geoms": [
+                      {
+                        "mesh": "left_knee",
+                        "pos": [
+                          0.0,
+                          0.0,
+                          0.0
+                        ],
+                        "quat": [
+                          1.0,
+                          0.0,
+                          0.0,
+                          0.0
+                        ]
+                      }
+                    ],
+                    "children": [
+                      {
+                        "name": "ankle_left",
+                        "pos": [
+                          0.042,
+                          0.0,
+                          -0.024
+                        ],
+                        "quat": [
+                          -3.67321e-06,
+                          -1.0,
+                          0.0,
+                          0.0
+                        ],
+                        "joint": {
+                          "name": "left_ankle",
+                          "axis": [
+                            0.0,
+                            0.0,
+                            1.0
+                          ],
+                          "pos": [
+                            0.0,
+                            0.0,
+                            0.0
+                          ]
+                        },
+                        "geoms": [
+                          {
+                            "mesh": "left_ankle",
+                            "pos": [
+                              0.0,
+                              0.0,
+                              0.0
+                            ],
+                            "quat": [
+                              1.0,
+                              0.0,
+                              0.0,
+                              0.0
+                            ]
+                          }
+                        ],
+                        "children": []
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "neck",
+        "pos": [
+          0.041,
+          0.0145,
+          0.0095
+        ],
+        "quat": [
+          0.499998,
+          0.5,
+          -0.5,
+          0.500002
+        ],
+        "joint": {
+          "name": "neck_pitch",
+          "axis": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "pos": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "geoms": [
+          {
+            "mesh": "neck_pitch",
+            "pos": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "quat": [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ]
+          }
+        ],
+        "children": [
+          {
+            "name": "neck_pitch",
+            "pos": [
+              0.05,
+              0.0,
+              0.0
+            ],
+            "quat": [
+              -2.59734e-06,
+              0.707105,
+              -0.707108,
+              2.59735e-06
+            ],
+            "joint": {
+              "name": "head_pitch",
+              "axis": [
+                0.0,
+                0.0,
+                1.0
+              ],
+              "pos": [
+                0.0,
+                0.0,
+                0.0
+              ]
+            },
+            "geoms": [
+              {
+                "mesh": "head_pitch",
+                "pos": [
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "quat": [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ]
+              }
+            ],
+            "children": [
+              {
+                "name": "yaw_roll_motion",
+                "pos": [
+                  0.0,
+                  -0.01925,
+                  -0.0145
+                ],
+                "quat": [
+                  0.499998,
+                  0.5,
+                  0.5,
+                  -0.500002
+                ],
+                "joint": {
+                  "name": "head_yaw",
+                  "axis": [
+                    0.0,
+                    0.0,
+                    1.0
+                  ],
+                  "pos": [
+                    0.0,
+                    0.0,
+                    0.0
+                  ]
+                },
+                "geoms": [
+                  {
+                    "mesh": "head_yaw",
+                    "pos": [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    "quat": [
+                      1.0,
+                      0.0,
+                      0.0,
+                      0.0
+                    ]
+                  }
+                ],
+                "children": [
+                  {
+                    "name": "jaw_soft",
+                    "pos": [
+                      0.0,
+                      -0.0179,
+                      0.0145
+                    ],
+                    "quat": [
+                      0.707105,
+                      0.707108,
+                      0.0,
+                      0.0
+                    ],
+                    "joint": {
+                      "name": "head_roll",
+                      "axis": [
+                        0.0,
+                        0.0,
+                        1.0
+                      ],
+                      "pos": [
+                        0.0,
+                        0.0,
+                        0.0
+                      ]
+                    },
+                    "geoms": [
+                      {
+                        "mesh": "head_roll",
+                        "pos": [
+                          0.0,
+                          0.0,
+                          0.0
+                        ],
+                        "quat": [
+                          1.0,
+                          0.0,
+                          0.0,
+                          0.0
+                        ]
+                      }
+                    ],
+                    "children": []
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "bearing_roll",
+        "pos": [
+          0.02,
+          -0.0175,
+          -0.026
+        ],
+        "quat": [
+          -2.59734e-06,
+          0.707105,
+          -0.707108,
+          2.59735e-06
+        ],
+        "joint": {
+          "name": "right_hip_yaw",
+          "axis": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "pos": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "geoms": [
+          {
+            "mesh": "right_hip_yaw",
+            "pos": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "quat": [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ]
+          }
+        ],
+        "children": [
+          {
+            "name": "hip_l_2",
+            "pos": [
+              0.0,
+              -0.0145,
+              0.0145
+            ],
+            "quat": [
+              0.499998,
+              0.5,
+              0.5,
+              -0.500002
+            ],
+            "joint": {
+              "name": "right_hip_roll",
+              "axis": [
+                0.0,
+                0.0,
+                1.0
+              ],
+              "pos": [
+                0.0,
+                0.0,
+                0.0
+              ]
+            },
+            "geoms": [
+              {
+                "mesh": "right_hip_roll",
+                "pos": [
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "quat": [
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ]
+              }
+            ],
+            "children": [
+              {
+                "name": "upper_leg_right",
+                "pos": [
+                  0.0,
+                  0.0225,
+                  -0.0165
+                ],
+                "quat": [
+                  -0.344919,
+                  0.344913,
+                  -0.617281,
+                  -0.617276
+                ],
+                "joint": {
+                  "name": "right_hip_pitch",
+                  "axis": [
+                    0.0,
+                    0.0,
+                    1.0
+                  ],
+                  "pos": [
+                    0.0,
+                    0.0,
+                    0.0
+                  ]
+                },
+                "geoms": [
+                  {
+                    "mesh": "right_hip_pitch",
+                    "pos": [
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    "quat": [
+                      1.0,
+                      0.0,
+                      0.0,
+                      0.0
+                    ]
+                  }
+                ],
+                "children": [
+                  {
+                    "name": "leg_2",
+                    "pos": [
+                      0.041977,
+                      0.0,
+                      0.0
+                    ],
+                    "quat": [
+                      -3.20658e-06,
+                      0.872964,
+                      0.487784,
+                      -1.79173e-06
+                    ],
+                    "joint": {
+                      "name": "right_knee",
+                      "axis": [
+                        0.0,
+                        0.0,
+                        1.0
+                      ],
+                      "pos": [
+                        0.0,
+                        0.0,
+                        0.0
+                      ]
+                    },
+                    "geoms": [
+                      {
+                        "mesh": "right_knee",
+                        "pos": [
+                          0.0,
+                          0.0,
+                          0.0
+                        ],
+                        "quat": [
+                          1.0,
+                          0.0,
+                          0.0,
+                          0.0
+                        ]
+                      }
+                    ],
+                    "children": [
+                      {
+                        "name": "ankle_right",
+                        "pos": [
+                          0.042,
+                          0.0,
+                          -0.024
+                        ],
+                        "quat": [
+                          -3.67321e-06,
+                          -1.0,
+                          0.0,
+                          0.0
+                        ],
+                        "joint": {
+                          "name": "right_ankle",
+                          "axis": [
+                            0.0,
+                            0.0,
+                            1.0
+                          ],
+                          "pos": [
+                            0.0,
+                            0.0,
+                            0.0
+                          ]
+                        },
+                        "geoms": [
+                          {
+                            "mesh": "right_ankle",
+                            "pos": [
+                              0.0,
+                              0.0,
+                              0.0
+                            ],
+                            "quat": [
+                              1.0,
+                              0.0,
+                              0.0,
+                              0.0
+                            ]
+                          }
+                        ],
+                        "children": []
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "missing_joints": [
+    "mouth"
+  ]
+}

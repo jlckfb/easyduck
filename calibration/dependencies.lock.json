@@ -1,0 +1,19 @@
+{
+  "LICENSE-three.txt": {
+    "sha256": "852e0e8699169bf9f6fdc6bda3e682d078dcbc738b5d33e74df594721bff271d",
+    "bytes": 1081
+  },
+  "OrbitControls.js": {
+    "sha256": "7aa4372a5ec60b49988edde81014c7361740a57962d032003ca33301c1f4edd5",
+    "bytes": 30973
+  },
+  "STLLoader.js": {
+    "sha256": "896d006a48b8f125385a485ccae154dadee801a953f0b45ceffe7ddd8a29ca93",
+    "bytes": 10029
+  },
+  "three.module.js": {
+    "sha256": "76dea8151bc9352aef3528b4262e249b2604f62543828328db978d060d61a495",
+    "bytes": 1272972
+  },
+  "three_revision": "160"
+}
