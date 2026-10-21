@@ -1,0 +1,42 @@
+# Reference configuration for a specific TaishanPi 1M + HD1910 robot.
+# Read at startup from /etc/robot/robotd.toml; restart robotd after changes.
+# Calibrate your own robot before enabling motion.
+
+[bus]
+port = "/dev/ttyS3"
+[control]
+hz = 50
+[update_gate]
+[policy]
+gain = 5
+gain_d = 20
+standing_gain_ratio = 1.0
+enabled = true
+mode = "walk"
+walk = "/opt/robot/daemon/policies/xgoduck_walk_original_signs_20261009.onnx"
+stand = "/opt/robot/daemon/policies/xgoduck_walk_original_signs_20261009.onnx"
+sitstand = "/opt/robot/daemon/policies/xgoduck_getup_official_tspi_20261013.onnx"
+ground_pick = "/opt/robot/daemon/policies/xgoduck_pick_official_tspi_20261013.onnx"
+kick_left = "none"
+kick_right = "none"
+roulade = "/opt/robot/daemon/policies/xgoduck_roulade_official_tspi_20261013.onnx"
+action_scale = 1.0
+head_lowpass = 1.0
+legs_lowpass = 1.0
+[safety]
+overtemp_gain = 3
+fall_gravity_z = -0.819152
+[audio]
+enabled = true
+device = "plughw:0,0"
+bank = "/var/lib/robot/sounds"
+greet = true
+[theremin]
+[detect]
+[chorale]
+[media]
+[imu]
+source = "i2c"
+i2c_dev = "/dev/i2c-2"
+i2c_addr = 107
+fusion = "sflp"

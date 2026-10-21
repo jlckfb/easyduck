@@ -1,0 +1,19 @@
+[Unit]
+Description=Robot control daemon
+After=local-fs.target
+[Service]
+Type=exec
+ExecStart=/opt/robot/daemon/current/bin/robotd --socket /run/robotd.sock
+User=root
+Group=robot
+Restart=always
+RestartSec=2s
+NoNewPrivileges=yes
+ProtectKernelTunables=yes
+RestrictSUIDSGID=yes
+Environment=RUST_LOG=info
+StandardOutput=journal
+StandardError=journal
+RuntimeDirectory=robotd
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,15 @@
+# Fixed default-parameter test fixture; not a deployment configuration.
+[bus]
+port = "/dev/ttyS2"
+[control]
+hz = 50
+[update_gate]
+[policy]
+enabled = true
+mode = "walk"
+[safety]
+[audio]
+[theremin]
+[detect]
+[chorale]
+[media]

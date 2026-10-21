@@ -1,0 +1,41 @@
+[package]
+name = "robotd"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "TaishanPi HD1910 robot control daemon"
+
+[dependencies]
+duck-ipc-proto = { path = "../duck-ipc-proto" }
+duck-control = { path = "../duck-control" }
+robotd-params = { path = "../robotd-params" }
+kinematics = { path = "../kinematics" }
+odometry = { path = "../odometry" }
+pet-detect = { path = "../pet-detect" }
+# The voice, for the live synth the theremin plays through. The bank's wavs cover every
+# sound whose whole shape is known in advance; a theremin's pitch is a hand's distance and
+# is not, so `robotd` renders that one itself. Pure Rust, no vendored anything.
+sounds = { path = "../sounds" }
+clap = { workspace = true, features = ["derive"] }
+serde.workspace = true
+serde_json.workspace = true
+tokio = { workspace = true, features = [
+    "rt-multi-thread",
+    "macros",
+    "net",
+    "time",
+    "io-util",
+    "signal",
+    "sync",
+] }
+tracing.workspace = true
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
+libc = "0.2"
+thiserror.workspace = true
+toml = "0.9"
+# Lock-free single-value slots for the intent hand-off: the control loop does one
+# atomic load per tick and can never be held up by an IPC task writing the other side.
+arc-swap = "1"
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }
