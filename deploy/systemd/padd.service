@@ -1,0 +1,35 @@
+[Unit]
+Description=Robot gamepad intent client
+After=robotd.service local-fs.target
+PartOf=robotd.service
+Wants=robotd.service
+After=bluetooth.service
+[Service]
+Type=exec
+ExecStart=/opt/robot/daemon/current/bin/padd
+User=padd
+Group=padd
+SupplementaryGroups=input robot
+Restart=always
+RestartSec=5s
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictAddressFamilies=AF_UNIX AF_NETLINK
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+CapabilityBoundingSet=
+Environment=RUST_LOG=info
+StandardOutput=journal
+StandardError=journal
+RuntimeDirectory=padd
+[Install]
+WantedBy=multi-user.target
