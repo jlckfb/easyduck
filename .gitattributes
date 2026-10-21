@@ -1,0 +1,3 @@
+# Preserve audited original bytes, including CRLF, so provenance hashes survive clone.
+# New deploy scripts and generated text are explicitly written as LF.
+* -text
