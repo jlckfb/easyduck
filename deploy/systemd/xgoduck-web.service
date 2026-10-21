@@ -1,0 +1,15 @@
+[Unit]
+Description=XGO web controls for existing robotd
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/robot/xgoduck-web
+ExecStart=/usr/bin/python3 /opt/robot/xgoduck-web/server.py --port 9527
+Restart=on-failure
+RestartSec=2
+TimeoutStopSec=5
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
