@@ -19,7 +19,7 @@ Easyduck 把机器人主控、手柄、网页、标定台、动作模型和音�
 | 音效播放 | 生成音效库，由主控播放叫声及合唱音效 |
 | 编译与安装 | 编译四个 ARM64 程序，安装应用文件，核对文件完整性并按备份回退 |
 
-**动作入口：**正式网页开放默认站姿、行走／起身和捡物；网页中的翻滚按钮目前未开放。主控保留翻滚流程和对应模型，可由支持该动作的手柄或命令行入口请求。起身由主控根据姿态条件切换，不是按下按钮后无条件执行。
+**动作入口：** 正式网页开放默认站姿、行走／起身和捡物；网页中的翻滚按钮目前未开放。主控保留翻滚流程和对应模型，可由支持该动作的手柄或命令行入口请求。起身由主控根据姿态条件切换，不是按下按钮后无条件执行。
 
 ## 硬件与运行环境
 
@@ -79,12 +79,14 @@ Easyduck 把机器人主控、手柄、网页、标定台、动作模型和音�
 
 ### 1. 准备编译环境
 
-在 Linux 编译机上准备运行中的 Docker 工具链容器，包含 Rust、ARM64 交叉编译器、目标系统库和 Cargo 依赖缓存。容器内容要求及可配置路径见[编译与部署说明](deploy/README.md)。
+在 Linux x86-64 编译机安装 Docker，使用仓库中的 Dockerfile 创建编译环境。首次创建需要联网下载工具链与依赖，后续应用编译可在无网络容器内进行。详细要求及可配置路径见[编译与部署说明](deploy/README.md)。
 
-在仓库根目录执行；容器名替换为自己已经准备好的容器：
+在仓库根目录执行：
 
 ```sh
-EASYDUCK_BUILD_CONTAINER=your-build-container bash deploy/build.sh
+docker build -f deploy/Dockerfile -t easyduck-build:1.98.1 .
+docker run -d --name easyduck-build --network none easyduck-build:1.98.1
+bash deploy/build.sh
 (cd models && sha256sum -c SHA256SUMS)
 ```
 
