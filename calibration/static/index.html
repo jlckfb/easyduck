@@ -1,10 +1,10 @@
 <!doctype html>
-<html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<html lang="zh-CN"><head><meta name="setup-port" content="__SETUP_PORT__"><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>XGODUCK · 实物标定台</title><link rel="icon" href="data:,">
 <link rel="stylesheet" href="style.css">
 <script type="importmap">{"imports":{"three":"/vendor/three.module.js"}}</script>
 </head><body>
-<header><div><span class="eyebrow">XGODUCK / CALIBRATION</span><h1>实物标定台 <span id="connection">正在连接</span></h1></div><div class="actions"><button id="onAll">全部上力矩</button><button id="homeAll" class="primary">缓慢回 HOME</button><button id="stopAllMotion">停止并保持</button><button id="offAll" class="danger">全部松力矩</button></div></header>
+<header><div><span class="eyebrow">XGODUCK / CALIBRATION</span><h1>实物标定台 <span id="connection">正在连接</span></h1></div><div class="actions"><button id="onAll">全部上力矩</button><button id="homeAll" class="primary">缓慢回 HOME</button><button id="stopAllMotion">停止并保持</button><button id="offAll" class="danger">全部松力矩</button></div></header><nav class="page-nav" aria-label="页面切换"><a id="nav-settings">连接设置</a><a id="nav-control">机器人控制</a></nav>
 <main><section class="visual"><div class="toolbar"><div><b id="modeLabel">实物实时跟随</b><small id="modelStatus">正在加载3D显示模型</small></div><div><button id="stopDemo" hidden>停止示范</button><button id="live">实时跟随</button><button id="reference">参考站姿</button><button id="resetCamera">重置视角</button></div></div>
 <div id="viewport"><div id="stale">等待新鲜反馈</div><div class="axisLegend">X 前 · 红　Y 左 · 绿　Z 上 · 蓝<br>拖动旋转 · 滚轮缩放</div></div>
 <div class="motionPanel"><b id="homeAlignment">旧HOME尚未与参考站姿对齐</b><p>先查看参考站姿，将实物摆到对应姿态，再记录全部HOME。记录只保存当前读数，不上力、不运动。</p><button id="captureHomeAll" class="primary">全部设为 HOME（记录当前位置）</button></div>

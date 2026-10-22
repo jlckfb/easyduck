@@ -69,7 +69,7 @@ def atomic_save(path,data):
 
 class App:
     def __init__(self,args):
-        self.args=args; self.lock=threading.RLock(); self.stop=threading.Event()
+        self.args=args; self.lock=threading.RLock(); self.stop=threading.Event(); self.leaving=False
         baseline=json.loads(Path(args.baseline).read_text(encoding='utf-8'))
         baseline['imu']={'mount':DEFAULT_MOUNT,'gyro_bias':[0,0,0]}
         self.saved=json.loads(Path(args.profile).read_text()) if Path(args.profile).exists() else baseline
@@ -145,6 +145,9 @@ class App:
         with self.lock:
             if not isinstance(d,dict): raise ValueError('请求必须是对象')
             op=d.get('op')
+            if op=='cancel_exit':
+                self.leaving=False; return {'message':'已取消页面切换'}
+            if self.leaving: raise ValueError('正在退出标定，请等待页面切换完成')
             if op=='capture_home_all':
                 if self.motion.job: raise ValueError('请先停止运动，再记录全部HOME')
                 if d.get('revision')!=self.revision: raise ValueError('标定已变化，请刷新后重试')
@@ -265,13 +268,16 @@ class App:
                 if runtime['supported']:
                     return {'message':'标定已保存并留备份；正式程序（robotd %s）启动时读取，点“退出标定并应用到正式控制”后生效'%runtime['sha256'][:8]}
                 return {'message':'已保存，但当前正式程序（robotd %s）不读网页标定，保存不会影响网页控制'%(runtime['sha256'] or '未知')[:8],'warning':True}
-            if op=='apply_exit':
+            if op in ('apply_exit','prepare_exit'):
                 if d.get('confirm') is not True: raise ValueError('需要确认机器人已躺好或扶住')
                 if self.motion.job: raise ValueError('请先停止实物运动，再退出标定')
                 if d.get('revision')!=self.revision: raise ValueError('草稿已变化，请刷新页面重试')
                 if self.profile!=self.saved: raise ValueError('有未保存草稿：请先保存或撤销，再退出标定')
                 for sid in IDS:
                     if self.bus.read(sid,40,1)[0]!=0: raise ValueError('退出前请先全部松力矩')
+                if op=='prepare_exit':
+                    self.leaving=True
+                    return {'message':'草稿、运动和力矩已核对，准备退出标定'}
                 runtime=runtime_support(self.args.robotd)
                 cmd=apply_command()
                 if self.args.mock or self.args.dry_run_apply:
@@ -329,7 +335,12 @@ class Handler(SimpleHTTPRequestHandler):
         self.send_response(status); self.send_header('Content-Type','application/json; charset=utf-8')
         self.send_header('Content-Length',str(len(b))); self.end_headers(); self.wfile.write(b)
     def do_GET(self):
-        if urlsplit(self.path).path=='/api/state': self.reply(self.server.app.state())
+        path=urlsplit(self.path).path
+        if path=='/api/state': self.reply(self.server.app.state())
+        elif path in ('/','/index.html'):
+            data=(ROOT/'static/index.html').read_bytes().replace(b'__SETUP_PORT__',str(int(os.environ.get('EASYDUCK_SETUP_PORT','80'))).encode())
+            self.send_response(200); self.send_header('Content-Type','text/html; charset=utf-8')
+            self.send_header('Content-Length',str(len(data))); self.end_headers(); self.wfile.write(data)
         else: super().do_GET()
     def do_POST(self):
         if self.path!='/api/command': self.reply({'error':'不存在'},404); return

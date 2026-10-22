@@ -135,4 +135,4 @@ sudo python3 deploy/rollback.py --root / --backup /var/lib/easyduck/backups/<编
 
 ## 首次配网与手柄连接
 
-保留泰山派系统管理页的 R3/R4 基础系统，可通过 USB 地址 `http://192.168.7.1/` 配置 Wi-Fi 和蓝牙手柄，随后改用无线 IP 访问控制网页或 SSH。详见 [首次连接设置](setup/README.md)。
+连接设置页通过 NetworkManager 和 BlueZ 配置 Wi-Fi 与 PS5 手柄，可使用设备的 USB、无线或以太网地址访问。独立安装、自动重连及验收步骤见 [连接设置说明](setup/README.md)。

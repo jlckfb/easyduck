@@ -1,7 +1,8 @@
 <!doctype html>
-<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<html lang="en"><meta name="setup-port" content="__SETUP_PORT__"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>XGO Duck</title><link rel="stylesheet" href="style.css">
 <main><header><div><small>泰山派 1M · HD1910</small><h1>XGO Duck</h1></div><div class="header-actions"><button class="stop" id="stop">Torque off</button></div></header>
+<nav class="nav" aria-label="页面切换"><a id="nav-settings">连接设置 ↗</a><a id="nav-calibration">实物标定台 ↗</a></nav>
 <p class="hint">网页控制机器人姿态、行走和捡物。窗口失焦或页面隐藏时移动输入归零；关闭页面释放网页控制权。空格键、Torque off请求断力。</p>
 <section><h2>控制入口：<span id="control-owner">等待连接</span></h2><p>手柄：<span id="pad-connection">未知</span> · <span id="control-rule">手柄优先</span></p><div class="buttons"><button id="use-web">使用网页控制</button><button id="use-pad">恢复手柄优先</button></div><p class="hint">开机手柄优先；手柄未连接时可用网页。打开网页和登录SSH不会抢走手柄控制。切换先停止策略并保持当前姿态，连接或切换不会自动上力。任意一端均可断力。</p></section>
 <p id="calibration-status" class="hint">标定状态：等待读取</p>

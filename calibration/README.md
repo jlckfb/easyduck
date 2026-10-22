@@ -18,3 +18,9 @@ python3 server.py --mock --bind 127.0.0.1 --http-port 8766 --baseline ../config/
 `imu/` 包含 GPL-3.0-or-later 的 IMU 读取模块；显示素材与浏览器依赖的授权见[第三方声明](../THIRD_PARTY_NOTICES.md)。
 
 速度恢复记录位于 `/etc/robot/calibration_speed_restore.json`，用于标定退出后恢复原速度参数。
+
+## 切换页面
+
+可从连接设置页或机器人控制页进入标定台。导航由 [连接设置服务](../deploy/setup/README.md) 协调，三个页面沿用同一无线主机地址；设置页端口通过 `/etc/easyduck/setup.env` 配置。
+
+标定页顶部可返回机器人控制或连接设置。切换前须保存或撤销草稿、停止实物运动、全部松力矩；未完成时会保留当前页面并提示。退出时冻结新的标定操作，关闭串口并恢复临时速度后才恢复正式服务。切换不会自动保存标定、上力或运行策略。

@@ -129,14 +129,7 @@ $('captureZero').onclick=()=>capture('zero');$('captureMin').onclick=()=>capture
 $('preview').onclick=()=>{if(!state)return;const p=structuredClone(state.profile),k=String(selected);p.zero[k]=Number($('zero').value);p.sign[k]=Number($('sign').value);p.lim[k]=[Number($('min').value),Number($('max').value)];run({op:'preview',profile:p,revision:state.revision});};
 $('discard').onclick=()=>run({op:'discard'});
 $('save').onclick=()=>{if(formDirty)return toast('先点击“预览此关节”，再保存',true);if(!state?.dirty)return toast('参数没有变化，无需保存');if(confirm('将保存全部草稿，保留旧文件备份。'+(state.runtime_support?.supported?'正式程序启动时读取，保存后点“退出标定并应用到正式控制”生效。':'当前正式程序不读网页标定，保存不会影响网页控制。')+'确认前请先核对实物方向和姿态。'))run({op:'save',revision:state.revision});};
-$('applyExit').onclick=async()=>{
- if(!state||busy)return;
- if(formDirty||state.dirty)return toast('有未保存草稿：请先保存或撤销，再退出标定',true);
- if(state.motion?.active)return toast('请先停止实物运动',true);
- const rt=state.runtime_support||{};
- if(!confirm('确认机器人已躺好或已扶住，且15个舵机已全部断力？\n\n将依次：停止标定 → 启动robotd → 启动网页控制（9527）。robotd启动后处于xgo_off，不会上力。本页随后断开。'+(rt.supported?'':'\n\n注意：当前robotd不读网页标定，保存的标定不会生效。')))return;
- busy=true;renderMotion();try{await run({op:'apply_exit',revision:state.revision,confirm:true});}finally{busy=false;renderMotion();}
-};
+$('applyExit').onclick=()=>navigateTo('control');
 $('export').onclick=()=>{if(!state)return;const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(state.profile,null,2)],{type:'application/json'}));a.download='xgoduck-calibration.json';a.click();URL.revokeObjectURL(a.href);};
 for(const b of document.querySelectorAll('[data-pose]'))b.onclick=()=>run({op:'pose',pose:b.dataset.pose});
 $('solve').onclick=()=>run({op:'solve'});$('bias').onclick=()=>run({op:'bias'});
@@ -144,3 +137,18 @@ const ray=new THREE.Raycaster(),mouse=new THREE.Vector2();let down;
 renderer.domElement.addEventListener('pointerdown',e=>down=[e.clientX,e.clientY]);renderer.domElement.addEventListener('pointerup',e=>{if(!down||Math.hypot(e.clientX-down[0],e.clientY-down[1])>5)return;const r=renderer.domElement.getBoundingClientRect();mouse.set((e.clientX-r.left)/r.width*2-1,-(e.clientY-r.top)/r.height*2+1);ray.setFromCamera(mouse,camera);const hit=ray.intersectObjects(meshes).find(h=>h.object.userData.joint);if(hit&&state){const row=state.rows.find(v=>v.name===hit.object.userData.joint);if(row)choose(row.id);}});
 loadModel().catch(e=>{$('modelStatus').textContent='模型加载失败';toast(e.message,true);});poll();requestAnimationFrame(animate);
 window.calibrationDebug=()=>({ready,meshCount:meshes.length,jointCount:hinges.size,selected,mode,fresh:fresh(),state});
+
+function navigationURL(target){
+ const url=new URL('/navigate',location.href);url.port=document.querySelector('meta[name="setup-port"]').content;url.searchParams.set('target',target);url.searchParams.set('source','calibration');return url.href;
+}
+function navigateTo(target){
+ if(!state||busy)return toast('请等待当前操作完成后再切换页面',true);
+ if(formDirty||state.dirty)return toast('有未保存草稿：请先保存或撤销，再切换页面',true);
+ if(state.motion?.active)return toast('请先停止实物运动',true);
+ if(state.rows.some(row=>row.torque!==false||row.error))return toast('请先全部松力矩，并确认全部舵机反馈正常',true);
+ location.assign(navigationURL(target));
+}
+for(const [id,target] of [['nav-settings','setup'],['nav-control','control']]){
+ const link=$(id);link.href=navigationURL(target);link.onclick=event=>{event.preventDefault();navigateTo(target);};
+}
+window.addEventListener('beforeunload',event=>{if(formDirty||state?.dirty){event.preventDefault();event.returnValue='';}});

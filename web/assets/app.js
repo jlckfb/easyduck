@@ -5,7 +5,7 @@ let controlGeneration=null, webAllowed=false;
 function resetInput(){keys.clear();zero();for(let i=0;i<4;i++)$('head'+i).value=0;$('mouth').value=0;}
 $('use-web').onclick=async()=>{try{resetInput();await post('command',{twist:[0,0,0],head:[0,0,0,0],mouth:0});await post('control',{preference:'web'});}catch(e){showError(e);}};
 $('use-pad').onclick=async()=>{try{resetInput();await post('control',{preference:'auto'});}catch(e){showError(e);}};
-function releasePage(){fetch('/api/release',{method:'POST',keepalive:true,headers:{'Content-Type':'application/json','X-Control-Id':controlId},body:'{}'}).catch(()=>{});}
+function releasePage(){return fetch('/api/release',{method:'POST',keepalive:true,headers:{'Content-Type':'application/json','X-Control-Id':controlId},body:'{}'}).catch(()=>{});}
 for(let i=0;i<4;i++) $('head-controls').insertAdjacentHTML('beforeend',`<label>head ${i+1}<input id="head${i}" type="range" min="-1" max="1" value="0" step="0.02"></label>`);
 $('head-controls').insertAdjacentHTML('beforeend','<label>Mouth 34 (°)<input id="mouth" type="range" min="0" max="30" value="0" step="1"></label>');
 async function post(path, body){const r=await fetch('/api/'+path,{method:'POST',headers:{'Content-Type':'application/json','X-Control-Id':controlId},body:JSON.stringify(body)});const x=await r.json();if(!r.ok)throw new Error(x.detail||'request failed');return x;}
@@ -26,6 +26,7 @@ function updateMotion(){
   ['vx','vy','wz'].forEach((id,i)=>$(id+'Value').textContent=motion[i].toFixed(2));
 }
 async function sendCommand(){
+  if(pageClosing)return;
   if(commandBusy){commandPending=true;return;}
   commandBusy=true;commandPending=false;
   try{await post('command',{twist:[...motion],head:[0,1,2,3].map(i=>+$('head'+i).value),mouth:+$('mouth').value});}
@@ -75,7 +76,7 @@ function connectControl(){
 window.addEventListener('pagehide',()=>{pageClosing=true;releasePage();controlSocket?.close();});
 window.addEventListener('pageshow',()=>{if(pageClosing){pageClosing=false;connectControl();}});
 connectControl();
-setInterval(()=>{if(!document.hidden&&!commandBusy)sendCommand();},50);
+setInterval(()=>{if(!pageClosing&&!document.hidden&&!commandBusy)sendCommand();},50);
 // Display only telemetry fields provided by robotd.
 // Missing counters or per-servo torque remain unknown.
 setInterval(async()=>{if(statusBusy||document.hidden)return;statusBusy=true;try{
@@ -108,3 +109,11 @@ const calLabel={applied:'已生效（推断）',pending_restart:'已保存，待
 $('calibration-status').textContent=`标定状态：${calLabel} · 文件 ${cal.file_sha256||'—'} · 保存于 ${cal.saved_at||'—'}（修改 ${calTime(cal.file_mtime)}） · robotd ${(cal.robotd_sha256||'—').slice(0,8)} 启动于 ${calTime(cal.robotd_started)}${cal.error?' · '+cal.error:''}。robotd不记录已加载哪份标定，“已生效”按文件修改时间早于robotd启动时间推断。`;
 $('calibration-status').className=cal.state==='applied'?'hint':'warn';
 }catch(e){showError(e);}finally{statusBusy=false;}},250);
+
+function navigationURL(target){
+ const url=new URL('/navigate',location.href);url.port=document.querySelector('meta[name="setup-port"]').content;url.searchParams.set('target',target);url.searchParams.set('source','control');return url.href;
+}
+for(const [id,target] of [['nav-settings','setup'],['nav-calibration','calibration']]){
+ const link=$(id);link.href=navigationURL(target);
+ link.onclick=async event=>{event.preventDefault();if(pageClosing)return;pageClosing=true;keys.clear();resetSticks.forEach(reset=>reset());updateMotion();await releasePage();controlSocket?.close();location.assign(link.href);};
+}

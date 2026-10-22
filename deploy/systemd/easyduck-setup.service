@@ -1,0 +1,22 @@
+[Unit]
+Description=Easyduck Wi-Fi and PS5 gamepad setup
+After=NetworkManager.service bluetooth.service
+Wants=NetworkManager.service bluetooth.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 -u /opt/robot/setup/first_setup.py
+EnvironmentFile=-/etc/easyduck/setup.env
+Restart=on-failure
+RestartSec=3
+User=root
+UMask=0077
+StateDirectory=easyduck/setup
+NoNewPrivileges=yes
+ProtectSystem=full
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/etc/NetworkManager/system-connections /var/lib/easyduck/setup
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,17 @@
+[Unit]
+Description=Reconnect an enrolled PS5 gamepad
+After=bluetooth.service
+Wants=bluetooth.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/robot/setup/first_setup.py --reconnect-once
+EnvironmentFile=-/etc/easyduck/setup.env
+User=root
+UMask=0077
+StateDirectory=easyduck/setup
+NoNewPrivileges=yes
+ProtectSystem=full
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/var/lib/easyduck/setup

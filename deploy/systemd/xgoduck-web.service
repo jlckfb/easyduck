@@ -3,6 +3,7 @@ Description=XGO web controls for existing robotd
 After=network.target
 
 [Service]
+EnvironmentFile=-/etc/easyduck/setup.env
 Type=simple
 WorkingDirectory=/opt/robot/xgoduck-web
 ExecStart=/usr/bin/python3 /opt/robot/xgoduck-web/server.py --port 9527

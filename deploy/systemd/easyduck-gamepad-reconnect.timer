@@ -1,0 +1,10 @@
+[Unit]
+Description=Retry enrolled PS5 gamepad connections
+
+[Timer]
+OnBootSec=15s
+OnUnitInactiveSec=15s
+Unit=easyduck-gamepad-reconnect.service
+
+[Install]
+WantedBy=timers.target

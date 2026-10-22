@@ -4,6 +4,7 @@ After=network.target
 Conflicts=robotd.service padd.service xgoduck-web.service
 
 [Service]
+EnvironmentFile=-/etc/easyduck/setup.env
 Type=simple
 WorkingDirectory=/opt/robot/calibration
 ExecStart=/usr/bin/python3 /opt/robot/calibration/server.py

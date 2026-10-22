@@ -501,7 +501,10 @@ def make_handler(gateway):
                     '/app.js': ('app.js', 'text/javascript; charset=utf-8'),
                     '/style.css': ('style.css', 'text/css; charset=utf-8')}.get(route)
             if file:
-                return self.reply((ASSETS / file[0]).read_bytes(), mime=file[1])
+                data=(ASSETS / file[0]).read_bytes()
+                if file[0]=='index.html':
+                    data=data.replace(b'__SETUP_PORT__',str(int(os.environ.get('EASYDUCK_SETUP_PORT','80'))).encode())
+                return self.reply(data, mime=file[1])
             self.reply({'detail': '不存在'}, 404)
 
         def control_connection(self):

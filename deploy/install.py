@@ -53,6 +53,9 @@ def mapping(profile, binaries):
         result.append((source, Path('opt/robot/daemon/policies') / name))
 
     result.append((ROOT / 'web/server.py', Path('opt/robot/xgoduck-web/server.py')))
+    for name in ('first_setup.py', 'connections.py', 'navigation.py'):
+        result.append((ROOT / 'deploy/setup' / name, Path('opt/robot/setup') / name))
+    tree(ROOT / 'deploy/setup/static', 'opt/robot/setup/static')
     tree(ROOT / 'web/assets', 'opt/robot/xgoduck-web/assets')
     for name in ('server.py', 'hardware.py', 'calibration_math.py', 'motion.py'):
         result.append((ROOT / 'calibration' / name, Path('opt/robot/calibration') / name))
