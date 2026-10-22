@@ -1,0 +1,16 @@
+# Toolchain context: dependency manifests only, never robot data or source.
+**
+!runtime/
+runtime/*
+!runtime/Cargo.toml
+!runtime/Cargo.lock
+!runtime/robotd/
+!runtime/padd/
+!runtime/robotctl/
+!runtime/sounds/
+!runtime/duck-control/
+!runtime/duck-ipc-proto/
+!runtime/robotd-params/
+!runtime/kinematics/
+runtime/*/*
+!runtime/*/Cargo.toml
