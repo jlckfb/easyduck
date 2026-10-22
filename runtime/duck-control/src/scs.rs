@@ -440,6 +440,7 @@ impl RobotIo for ScsIo {
     }
     fn slow_sensors(&mut self)->Result<SlowSensors>{let mut v=Vec::new();let mut t=[0.0;NUM_JOINTS];for(i,&id)in JOINT_IDS.iter().enumerate(){let b=self.read_reg(id,62,2)?;v.push(b[0]as f64*0.1);t[i]=b[1]as f64}Ok(SlowSensors{volts:v.iter().sum::<f64>()/v.len()as f64,temps_c:t})}
     fn imu_stale(&self)->ImuStale{ImuStale{total:self.imu_misses.0,run:self.imu_misses.1}}
+    fn imu_fresh(&self)->bool{self.imu.as_ref().is_some_and(|i|i.fresh())}
     fn imu_ready(&self)->bool{self.imu.as_ref().map(|i|i.ready()).unwrap_or(false)}
 }
 

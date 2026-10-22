@@ -142,6 +142,8 @@ impl<T: RobotIo> Safety<T> {
         self.io.imu_stale()
     }
 
+    pub fn imu_fresh(&self) -> bool { self.io.imu_fresh() }
+
     pub fn imu_ready(&self) -> bool {
         self.io.imu_ready()
     }
@@ -200,7 +202,7 @@ impl<T: RobotIo> Safety<T> {
         // Holding the previous verdict is the safe default in both directions. At startup that
         // is "not fallen", which is what the robot standing on the bench actually is; and a
         // filter that stops being ready mid-run leaves a fallen robot fallen.
-        if !self.io.imu_ready() {
+        if !self.io.imu_ready() || !self.io.imu_fresh() {
             return;
         }
 
@@ -449,6 +451,22 @@ mod tests {
 
     /// And once it has converged, the same sample must be believed — otherwise the guard
     /// above would simply disable fall detection.
+    #[test]
+    fn expired_orientation_cannot_accumulate_a_new_fall() {
+        let mut io = FakeIo::at(DEFAULT_POSITION);
+        io.imu_fresh = false;
+        let mut safety = Safety::new(io, SafetyConfig::default());
+        let mut sensors = Sensors::default();
+        sensors.imu.gravity = [1.0, 0.0, 0.0];
+        assert!(safety.imu_ready());
+        assert!(!safety.imu_fresh());
+        for _ in 0..100 { safety.observe(&sensors, Duration::from_millis(20)); }
+        assert!(!safety.fallen());
+        safety.io.imu_fresh = true;
+        for _ in 0..100 { safety.observe(&sensors, Duration::from_millis(20)); }
+        assert!(safety.fallen());
+    }
+
     #[test]
     fn a_converged_imu_still_detects_a_fall() {
         let mut io = FakeIo::at(DEFAULT_POSITION);

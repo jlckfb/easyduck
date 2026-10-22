@@ -178,6 +178,9 @@ pub trait RobotIo {
         ImuStale::default()
     }
 
+    /// Is the last accepted orientation younger than the backend freshness limit?
+    fn imu_fresh(&self) -> bool { true }
+
     /// Has the orientation filter converged? False for the first moments after startup.
     fn imu_ready(&self) -> bool {
         true
@@ -213,6 +216,8 @@ pub struct FakeIo {
     /// Whether the orientation filter reports converged. False models the first seconds after
     /// startup, when projected gravity is not yet a measurement.
     pub imu_ready: bool,
+    /// Test the independent orientation-age gate without hardware.
+    pub imu_fresh: bool,
     /// What [`RobotIo::slow_sensors`] reports. Mid-pack and hand-warm by default so `--fake`
     /// shows a plausible robot; set it to exercise a flat pack or a cooking servo. `None`
     /// fails the read, which is what a robot with no bus does.
@@ -246,6 +251,7 @@ impl FakeIo {
             joint_gains: [None; NUM_JOINTS],
             joint_gain_writes: 0,
             imu_ready: true,
+            imu_fresh: true,
             slow: Some(SlowSensors {
                 volts: 7.4,
                 temps_c: [32.0; NUM_JOINTS],
@@ -331,6 +337,7 @@ impl RobotIo for FakeIo {
     fn imu_ready(&self) -> bool {
         self.imu_ready
     }
+    fn imu_fresh(&self) -> bool { self.imu_fresh }
 
     fn slow_sensors(&mut self) -> Result<SlowSensors> {
         self.slow.ok_or(IoError::Simulated)

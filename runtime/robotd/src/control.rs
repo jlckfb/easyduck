@@ -227,9 +227,7 @@ impl Controller {
             DEFAULT_POSITION[j] + JOINT_SIGN[j] * offsets[j]);
         // Upstream retains 0.45 of the previous action and 0.55 of this one.
         // The reference uses the same alpha for head and legs by default.
-        let alpha = if frame.rolling { 0.15 } else { 0.55 };
-        let tuning = Tuning { head_lowpass: Some(alpha), legs_lowpass: Some(alpha),
-                              ..self.tuning };
+        let tuning = xgo_filter_tuning(self.tuning, frame.rolling);
         smooth_targets(&mut targets, self.previous, &tuning);
         self.previous = Some(targets);
         duck_control::io_trace::inference(trace_observation.as_ref().map(|o|o.as_slice()),
@@ -524,6 +522,12 @@ impl Controller {
 
 
 // The reference resets its filtered action to zero, equivalent to HOME targets.
+fn xgo_filter_tuning(tuning: Tuning, rolling: bool) -> Tuning {
+    // Upstream alpha weights the OLD action; smooth_targets weights the NEW target.
+    let new_weight = if rolling { 0.85 } else { 0.55 };
+    Tuning { head_lowpass: Some(new_weight), legs_lowpass: Some(new_weight), ..tuning }
+}
+
 fn smooth_targets(
     targets: &mut [f64; NUM_JOINTS],
     previous: Option<[f64; NUM_JOINTS]>,
@@ -549,6 +553,28 @@ fn smooth_targets(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn roulade_and_getup_match_reference_filter_across_switches_and_resets() {
+        let mut previous = None;
+        let mut reference = [0.0; NUM_JOINTS];
+        for frame in 0..100 {
+            let rolling = (10..60).contains(&frame);
+            if frame == 30 || frame == 60 { previous = None; reference = [0.0; NUM_JOINTS]; }
+            let action: [f64; NUM_JOINTS] = std::array::from_fn(|i|
+                if frame == 0 { 1.0 } else { ((frame+i) as f64 * 0.13).sin() });
+            let mut targets = std::array::from_fn(|i| DEFAULT_POSITION[i] + action[i]);
+            smooth_targets(&mut targets, previous, &xgo_filter_tuning(Tuning::default(), rolling));
+            let old_weight = if rolling { 0.15 } else { 0.45 };
+            for i in 0..NUM_JOINTS {
+                if i == duck_control::model::MOUTH_INDEX { continue; }
+                reference[i] = old_weight * reference[i] + (1.0-old_weight) * action[i];
+                assert!((targets[i]-DEFAULT_POSITION[i]-reference[i]).abs() < 1e-12,
+                    "frame {frame}, joint {i}, rolling {rolling}");
+            }
+            previous = Some(targets);
+        }
+    }
+
     #[test]
     fn reference_filter_matches_from_first_frame_and_after_reset() {
         let tuning = Tuning { head_lowpass: Some(0.55), legs_lowpass: Some(0.55), ..Tuning::default() };

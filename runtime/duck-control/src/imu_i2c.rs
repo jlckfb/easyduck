@@ -116,6 +116,7 @@ pub struct Lsm6dsv16xI2c {
     prev_w: [f64; 3],
     have_prev: bool,
     last_t: Option<std::time::Instant>,
+    freshness: crate::imu::ImuFreshness,
 }
 
 impl Lsm6dsv16xI2c {
@@ -148,6 +149,7 @@ impl Lsm6dsv16xI2c {
             prev_w: [0.0; 3],
             have_prev: false,
             last_t: None,
+            freshness: Default::default(),
         };
         chip.set_addr()?;
         chip.init()?;
@@ -307,15 +309,21 @@ impl Lsm6dsv16xI2c {
         self.decoder.ready()
     }
 
+    pub fn fresh(&self) -> bool { self.freshness.fresh(Instant::now()) }
+
     /// One control-loop sample.
     ///
     /// `Ok(None)` = no fresh orientation data this tick (sflp mode: FIFO empty). The caller
     /// holds the previous sample and counts a miss; the servos are unaffected.
     pub fn read_sample(&mut self) -> io::Result<Option<ImuData>> {
-        match self.mode {
+        let sample = match self.mode {
             FusionMode::Sflp => self.read_sample_sflp(),
             FusionMode::Comp => self.read_sample_comp().map(Some),
-        }
+        }?;
+        let sample = sample.filter(|s| s.gravity.iter().chain(s.gyro.iter()).all(|v| v.is_finite())
+            && s.gravity.iter().map(|v| v*v).sum::<f64>() > 1e-6);
+        if sample.is_some() { self.freshness.update(Instant::now()); }
+        Ok(sample)
     }
 
     fn read_sample_sflp(&mut self) -> io::Result<Option<ImuData>> {
@@ -365,7 +373,7 @@ impl Lsm6dsv16xI2c {
                 block[8..10].copy_from_slice(&y.to_le_bytes());
                 block[10..12].copy_from_slice(&z.to_le_bytes());
                 {
-                    let mut out=self.decoder.decode(&block);
+                    let Some(mut out) = self.decoder.decode_fifo(&block) else { return Ok(None); };
                     for k in 0..3 {out.gyro[k]-=self.bias_body[k];}
                     Ok(Some(out))
                 }
@@ -379,7 +387,7 @@ impl Lsm6dsv16xI2c {
             Some(t) => t.elapsed().as_secs_f64().clamp(1e-3, 0.1),
             None => 0.02,
         };
-        self.last_t = Some(std::time::Instant::now());
+        self.last_t = Some(Instant::now());
 
         let (a_s, w_s) = self.read_raw()?;
 
@@ -539,6 +547,7 @@ mod tests {
             prev_w: [0.0; 3],
             have_prev: false,
             last_t: None,
+            freshness: Default::default(),
         };
         // Simulate a tick at rest: read_raw would return a = (0,0,+1), ω = 0. We cannot
         // inject through read_raw (it does I/O), so drive the fusion math directly by

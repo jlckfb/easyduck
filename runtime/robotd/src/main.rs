@@ -1290,6 +1290,7 @@ async fn control_loop<T: RobotIo>(
     let mut shutdown_sit: Option<Instant> = None;
     let mut powered_off = false;
     let mut warned_imu_warming = false;
+    let mut warned_imu_expired = false;
 
     // Limp-fall (`[safety] limp_fall`): the predictor that sees a fall start, and where the
     // sequence it drives has got to. Built whether or not the mode is on — it costs a
@@ -1451,7 +1452,7 @@ async fn control_loop<T: RobotIo>(
             _ => HOME_RAMP,
         };
         match power_request {
-            Some(intents::PowerRequest::Init { .. }) if xgo_profile && !safety.imu_ready() => {
+            Some(intents::PowerRequest::Init { .. }) if xgo_profile && (!safety.imu_ready() || !safety.imu_fresh()) => {
                 tracing::warn!("xgoduck: IMU feedback unavailable; Default pose refused");
             },
             Some(intents::PowerRequest::Init { .. }) => match (bringup, sensors.as_ref()) {
@@ -1870,7 +1871,7 @@ async fn control_loop<T: RobotIo>(
         }
         if let (Bringup::Limp, true, true, Some(sensors)) = (
             bringup,
-            snapshot.enabled,
+            snapshot.enabled && (!xgo_profile || safety.imu_fresh()),
             controller.is_some(),
             sensors.as_ref(),
         ) {
@@ -1952,6 +1953,14 @@ async fn control_loop<T: RobotIo>(
         // seconds of projected gravity are whatever the filter is mid-way through deciding,
         // and a gait stepping against that horizon is the prototype's "crazy start".
         let imu_warm = safety.imu_ready();
+        let imu_fresh = safety.imu_fresh();
+        if xgo_profile && snapshot.enabled && !imu_fresh {
+            if !warned_imu_expired {
+                tracing::warn!("xgoduck: orientation older than 150 ms; holding measured pose until fresh IMU data returns");
+                warned_imu_expired = true;
+            }
+        } else { warned_imu_expired = false; }
+
         if snapshot.enabled && !imu_warm && !warned_imu_warming {
             tracing::warn!(
                 "IMU converging (keep the robot still) — the policy starts when it is ready"
@@ -1973,6 +1982,7 @@ async fn control_loop<T: RobotIo>(
             && !in_limp_fall
             && sensors.is_some()
             && imu_warm
+            && (!xgo_profile || imu_fresh)
             && !powered_off
             // The fall gate, when armed. Upstream drives straight through a fall on purpose
             // (the humans stay in charge) and that is still the default. It leans on
@@ -2449,7 +2459,7 @@ fn publish_slow_sensors<T: RobotIo>(io: &mut Safety<T>, state: &RobotState) {
     let stale = io.imu_stale();
     state.imu_stale_blocks.store(stale.total, Ordering::Relaxed);
     state.imu_stale_run.store(stale.run, Ordering::Relaxed);
-    state.imu_ready.store(io.imu_ready(), Ordering::Relaxed);
+    state.imu_ready.store(io.imu_ready() && io.imu_fresh(), Ordering::Relaxed);
 
     // Before the bus read, and unconditionally: this is a `sysfs` read that owes the motor bus
     // nothing, and a board cooking behind a blocked vent is *more* likely to be worth seeing on
@@ -4547,6 +4557,8 @@ mod tests {
         struct Borrowed<'a, T>(&'a mut T);
         impl<T: RobotIo> RobotIo for Borrowed<'_, T> {
             fn target_ranges(&self)->Option<[(f64,f64);NUM_JOINTS]>{self.0.target_ranges()}
+            fn imu_fresh(&self) -> bool { self.0.imu_fresh() }
+            fn imu_ready(&self) -> bool { self.0.imu_ready() }
             fn read(&mut self) -> duck_control::io::Result<duck_control::Sensors> {
                 self.0.read()
             }

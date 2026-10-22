@@ -116,6 +116,18 @@ impl SflpDecoder {
     }
 
     pub fn decode(&mut self, raw: &[u8; IMU_BLOCK_LEN]) -> ImuData {
+        self.decode_inner(raw, false)
+    }
+
+    /// A tagged FIFO entry is a new sample, even for an exact identity quaternion.
+    /// Malformed quaternions must not refresh the orientation age.
+    pub fn decode_fifo(&mut self, raw: &[u8; IMU_BLOCK_LEN]) -> Option<ImuData> {
+        let before = self.quat_samples;
+        let out = self.decode_inner(raw, true);
+        (self.quat_samples > before).then_some(out)
+    }
+
+    fn decode_inner(&mut self, raw: &[u8; IMU_BLOCK_LEN], fifo_entry: bool) -> ImuData {
         let gyro_sensor = [
             i16::from_le_bytes([raw[0], raw[1]]) as f64 * GYRO_RAD_PER_LSB,
             i16::from_le_bytes([raw[2], raw[3]]) as f64 * GYRO_RAD_PER_LSB,
@@ -130,7 +142,7 @@ impl SflpDecoder {
             u16::from_le_bytes([raw[8], raw[9]]),
             u16::from_le_bytes([raw[10], raw[11]]),
         ];
-        if packed != [0, 0, 0] {
+        if fifo_entry || packed != [0, 0, 0] {
             let (x, y, z) = (half(packed[0]), half(packed[1]), half(packed[2]));
             let norm_sq = x * x + y * y + z * z;
             // A quaternion the chip never produced would fail this; ≤ 1.02 allows for
@@ -376,5 +388,50 @@ mod tests {
             (magnitude - expected).abs() < 1e-9,
             "expected |gyro| {expected}, got {magnitude}"
         );
+    }
+}
+
+/// The age is measured from an accepted orientation, independently of servo traffic.
+#[derive(Default)]
+pub(crate) struct ImuFreshness {
+    last_update: Option<std::time::Instant>,
+}
+impl ImuFreshness {
+    pub(crate) fn update(&mut self, now: std::time::Instant) { self.last_update = Some(now); }
+    pub(crate) fn fresh(&self, now: std::time::Instant) -> bool {
+        self.last_update.is_some_and(|t|
+            now.saturating_duration_since(t) < std::time::Duration::from_millis(150))
+    }
+}
+
+#[cfg(test)]
+mod freshness_tests {
+    use super::*;
+    use std::time::{Duration, Instant};
+    #[test]
+    fn orientation_expires_by_time_and_recovers_only_on_update() {
+        let mut age = ImuFreshness::default();
+        let t = Instant::now();
+        assert!(!age.fresh(t));
+        age.update(t);
+        assert!(age.fresh(t + Duration::from_millis(149)));
+        assert!(!age.fresh(t + Duration::from_millis(150)));
+        // Reading joints and querying the age cannot keep orientation alive.
+        for ms in [160, 500, 5000] { assert!(!age.fresh(t + Duration::from_millis(ms))); }
+        age.update(t + Duration::from_secs(5));
+        assert!(age.fresh(t + Duration::from_secs(5)));
+    }
+    #[test]
+    fn tagged_identical_identity_samples_are_valid_but_invalid_quaternions_are_not() {
+        let mut d = SflpDecoder::default();
+        let identity = [0u8; IMU_BLOCK_LEN];
+        for _ in 0..25 { assert!(d.decode_fifo(&identity).is_some()); }
+        assert!(d.ready());
+        let mut bad = identity;
+        for v in [0x7e00u16, 0x7c00, 0x4000] { // NaN, infinity, norm too large
+            bad[6..8].copy_from_slice(&v.to_le_bytes());
+            assert!(d.decode_fifo(&bad).is_none());
+        }
+        assert!(d.decode_fifo(&identity).is_some());
     }
 }
