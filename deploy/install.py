@@ -63,6 +63,7 @@ def mapping(profile, binaries):
     tree(ROOT / 'deploy/sysusers.d', 'usr/lib/sysusers.d')
     tree(ROOT / 'deploy/alsa', 'var/lib/alsa')
     result.append((ROOT / 'LICENSE', Path('opt/robot/licenses/LICENSE')))
+    result.append((ROOT / 'THIRD_PARTY_NOTICES.md', Path('opt/robot/licenses/THIRD_PARTY_NOTICES.md')))
     tree(ROOT / 'LICENSES', 'opt/robot/licenses')
     return result
 
