@@ -39,11 +39,19 @@ fn power_emulator(initial:PowerState)->(ScsIo,PowerEmulator,CalibrationFile) {
             let mut tail=vec![0;header[3] as usize]; if master.read_exact(&mut tail).is_err(){break;}
             let id=header[2]; let instruction=tail[0];
             let Some(slot)=JOINT_IDS.iter().position(|&v|v==id) else {panic!("unexpected broadcast in arm/off test")};
-            let address=tail[1]; let mut s=shared.lock().unwrap();
+            let mut s=shared.lock().unwrap();
+            if instruction==0x0a {
+                assert_eq!(id,32);assert_eq!(s.torque[slot],0);
+                s.writes.push((id,0x0a,Vec::new()));
+                s.counts[slot]=(signed_position(s.counts[slot]).rem_euclid(4096))as u16;
+                let reply=frame(id,0,&[]);drop(s);
+                master.write_all(&reply).unwrap();continue;
+            }
+            let address=tail[1];
             if instruction==3 {
                 let data=&tail[2..tail.len()-1]; s.writes.push((id,address,data.to_vec()));
                 match address {
-                    GOAL=>{s.goals[slot]=u16le(data);s.torque[slot]=1;}, // Actual observed firmware behavior.
+                    GOAL=>{s.goals[slot]=if id==32 {u16le(data).min(4096)} else {u16le(data)};s.torque[slot]=1;}, // Actual observed firmware behavior.
                     GAIN=>s.gains[slot]=[data[0],data[1]],
                     TORQUE=>{
                         if data[0]==1 && s.goals[slot]!=s.counts[slot] {s.unsafe_enable=true;}
@@ -67,6 +75,8 @@ fn power_emulator(initial:PowerState)->(ScsIo,PowerEmulator,CalibrationFile) {
                 GOAL=>if s.bad_goal==Some(id){vec![0,0]}else{s.goals[slot].to_le_bytes().to_vec()},
                 GAIN=>if s.bad_gain==Some(id){vec![32,40]}else{s.gains[slot].to_vec()},
                 TORQUE=>vec![s.torque[slot]],
+                33=>vec![4],
+                9=>vec![0,0,255,15],
                 _=>panic!("unexpected read address"),
             };
             assert_eq!(data.len(),n);
@@ -270,7 +280,10 @@ fn xgo_power_head_yaw_extra_turn_arms_without_revolving_or_recalibrating() {
     let (mut io,em,_file)=power_emulator(state);
     io.set_torque_profile(true,true).unwrap();
     let s=em.state.lock().unwrap();
-    assert_eq!(s.goals[7],4961);
+    assert_eq!(s.goals[7],865);
+    assert_eq!(s.counts[7],865);
+    assert_eq!(s.writes.iter().filter(|(id,a,_)|*id==32 && *a==0x0a).count(),1);
+    assert_eq!(io.turn_offsets[7],0);
     assert!(!s.unsafe_enable);
     drop(s);
     let q=io.present_positions().unwrap();
@@ -289,14 +302,14 @@ fn scs_turn_coordinates_keep_negative_near_zero_and_sign_magnitude() {
     assert!(position_word(32768).is_err());
 }
 #[test]
-fn scs_turn_wire_keeps_physical_goal_on_the_latched_revolution() {
+fn scs_turn_wire_preserves_other_joint_turn_offsets() {
     let file=CalibrationFile::new(SAVED);
     let (mut io,mut master)=test_io(&file);
-    io.turn_offsets[7]=4096;
+    io.turn_offsets[5]=4096;
     io.write(&JointTargets::new(DEFAULT_POSITION)).unwrap();
     let raw=packet_counts(&mut master);
-    assert_eq!(raw[7],CAL_ZERO[7]+4096);
-    for i in 0..NUM_JOINTS {if i!=7 {assert_eq!(raw[i],CAL_ZERO[i]);}}
+    assert_eq!(raw[5],CAL_ZERO[5]+4096);
+    for i in 0..NUM_JOINTS {if i!=5 {assert_eq!(raw[i],CAL_ZERO[i]);}}
 }
 #[test]
 fn xgo_power_negative_ankle_arms_at_current_without_full_turn_goal() {
@@ -306,4 +319,13 @@ fn xgo_power_negative_ankle_arms_at_current_without_full_turn_goal() {
     let s=em.state.lock().unwrap();
     assert_eq!(s.goals[4],0x800a);assert!(!s.unsafe_enable);
     assert_eq!(io.turn_offsets[4],0);
+}
+
+#[test]
+fn xgo_power_single_turn_head_yaw_does_not_reset_any_servo() {
+    let (mut io,em,_file)=power_emulator(PowerState::boot());
+    io.set_torque_profile(true,true).unwrap();
+    let s=em.state.lock().unwrap();
+    assert!(!s.writes.iter().any(|(_,a,_)|*a==0x0a));
+    assert_eq!(s.goals[7],CAL_ZERO[7]);
 }

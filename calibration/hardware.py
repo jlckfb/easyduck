@@ -112,6 +112,20 @@ class Bus:
             self.write(sid,44,list(current))
             if self.read(sid,44,2)!=current: raise IOError('电流限制恢复回读失败')
 
+    def reset_head_yaw_turns(self,sid):
+        raw=getattr(self,'raw_positions',{}).get(sid,0)
+        count=self.signed_position(raw)
+        if sid!=32 or 0<=count<4096:return
+        if self.read(sid,40,1)!=b'\0':raise IOError('ID 32 must be released before turn reset')
+        if self.read(sid,9,4)!=bytes([0,0,255,15]):raise IOError('ID 32 turn reset requires single-turn limits')
+        # RESET clears volatile turns; it does not recalibrate or rewrite EEPROM.
+        os.write(self.fd,packet(sid,0x0a,[]));self.t.tcdrain(self.fd);time.sleep(.003)
+        after=self.signed_position(int.from_bytes(self.read_raw(sid,56,2),'little'))
+        if not 0<=after<4096 or abs(after-count%4096)>8 or self.read(sid,40,1)!=b'\0':
+            raise IOError('ID 32 turn reset verification failed')
+        self.turn_offsets[sid]=0
+        self.raw_positions[sid]=after
+
     def torque(self,sid,on):
         if on:
             # Capture target while still released. Never revive a stale policy goal.
@@ -120,6 +134,8 @@ class Bus:
             if int.from_bytes(p,'little')>4095: raise IOError('位置读数超出单圈范围')
             # This board's HD1910 servos use position mode 4; never rewrite mode.
             if self.read(sid,33,1) not in (b'\0',b'\4'): raise IOError('舵机不是位置模式，不能上力保持位置')
+            self.reset_head_yaw_turns(sid)
+            p=self.read(sid,56,2)
             self.ensure_current_limit(sid)
             if self.read(sid,46,2)==bytes(2):
                 self.set_speed(sid,1)

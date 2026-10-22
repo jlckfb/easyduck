@@ -316,8 +316,32 @@ impl ScsIo {
     fn arm_at_current(&mut self)->Result<()> {
         self.arm_at_current_profile(false)
     }
+    fn reset_head_yaw_turns(&mut self)->Result<()> {
+        let raw=u16le(&self.read_reg(32,POS,2)?);
+        let count=signed_position(raw);
+        if (0..4096).contains(&count) {return Ok(());}
+        // HD1910 mode 4 clips goals at the single-turn limit. Reset its volatile
+        // turn counter while released; changing only the host coordinates can rotate a full turn.
+        if ![0,4].contains(&self.read_reg(32,33,1)?[0])
+            || self.read_reg(32,9,4)?!=[0,0,255,15] {
+            return Err(IoError::Bus("ID 32 cannot reset turns with this position configuration".into()));
+        }
+        self.write_reg(32,TORQUE,&[0])?;
+        if self.read_reg(32,TORQUE,1)?!=[0] {
+            return Err(IoError::Bus("ID 32 torque-off verification failed before turn reset".into()));
+        }
+        self.response(&frame(32,0x0a,&[]),0)?;
+        let after=signed_position(u16le(&self.read_reg(32,POS,2)?));
+        if !(0..4096).contains(&after) || after.abs_diff(count.rem_euclid(4096))>8
+            || self.read_reg(32,TORQUE,1)?!=[0] {
+            return Err(IoError::Bus("ID 32 turn reset verification failed".into()));
+        }
+        self.turn_offsets[7]=0;
+        Ok(())
+    }
     fn arm_at_current_profile(&mut self, reference:bool)->Result<()> {
         let kp=self.enable_gain.ok_or_else(||IoError::Bus("SCS enable gain has not been configured".into()))?;
+        self.reset_head_yaw_turns()?;
         let first=self.arm_counts(reference)?;
         let second=if reference {first} else {self.checked_counts()?};
         for i in 0..NUM_JOINTS {
