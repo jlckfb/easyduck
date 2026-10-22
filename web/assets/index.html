@@ -1,18 +1,37 @@
 <!doctype html>
-<html lang="en"><meta name="setup-port" content="__SETUP_PORT__"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>XGO Duck</title><link rel="stylesheet" href="style.css">
-<main><header><div><small>泰山派 1M · HD1910</small><h1>XGO Duck</h1></div><div class="header-actions"><button class="stop" id="stop">Torque off</button></div></header>
-<nav class="nav" aria-label="页面切换"><a id="nav-settings">连接设置 ↗</a><a id="nav-calibration">实物标定台 ↗</a></nav>
-<p class="hint">网页控制机器人姿态、行走和捡物。窗口失焦或页面隐藏时移动输入归零；关闭页面释放网页控制权。空格键、Torque off请求断力。</p>
-<section><h2>控制入口：<span id="control-owner">等待连接</span></h2><p>手柄：<span id="pad-connection">未知</span> · <span id="control-rule">手柄优先</span></p><div class="buttons"><button id="use-web">使用网页控制</button><button id="use-pad">恢复手柄优先</button></div><p class="hint">开机手柄优先；手柄未连接时可用网页。打开网页和登录SSH不会抢走手柄控制。切换先停止策略并保持当前姿态，连接或切换不会自动上力。任意一端均可断力。</p></section>
-<p id="calibration-status" class="hint">标定状态：等待读取</p>
-<p id="message">Connecting…</p>
-<section class="metrics"><article><small>状态推送</small><strong id="rx">—</strong></article><article><small>robotd控制循环</small><strong id="rl">—</strong></article><article><small>舵机状态</small><strong id="servos">—</strong></article><article><small>IMU</small><strong id="imu">—</strong></article></section>
-<section><h2>Mode <span id="mode">—</span></h2><div class="buttons"><button data-mode="shadow" disabled title="当前网页未开放仅推理模式">Inference only</button><button data-mode="hold">Default pose</button><button data-mode="policy">Walk / get-up</button><button id="pick">Pick</button><button id="roulade" disabled title="当前网页未开放滚翻控制">Roulade</button></div><p class="hint">Default pose上力并进入默认站姿；Walk使用同一模型站立和行走，倒地恢复由主控处理；Pick请求4秒捡物动作并开合嘴部。沿用已保存标定和分关节增益。手柄与网页均保持运行，由板端统一选择控制入口。</p></section>
-<section><h2>实际策略 <span id="recovery-phase">—</span></h2><div class="controls"><article><small>Active model</small><p id="active-model">—</p></article><article><small>Tilt from (0, 0, -1)</small><p id="tilt-angle">—</p></article><article><small>起身流程</small><p id="recovery-timer">—</p></article></div><p class="hint">下方显示robotd实际状态。接口收到请求，不等于舵机已经上力；具体拒绝原因见底部日志。</p></section>
-<section><h2>Motion</h2><div class="joysticks"><div class="joystick-side"><label id="left-label">Forward / strafe</label><div class="joy" id="joy-left" role="group" aria-labelledby="left-label"><div class="knob"></div></div><p class="joy-value">vx <span id="vxValue">0.00</span> · vy <span id="vyValue">0.00</span></p></div><div class="joystick-side"><label id="right-label">Yaw</label><div class="joy" id="joy-right" role="group" aria-labelledby="right-label"><div class="knob"></div></div><p class="joy-value">ωz <span id="wzValue">0.00</span></p></div></div><button id="zero">Zero motion</button><p class="hint">Drag a pad; release returns it to zero. Limits are vx ±0.4, vy ±0.3, ωz ±1.0. Keys: W/S forward, A/D strafe, Q/E yaw. Space turns torque off.</p></section>
-<section><h2>Head and mouth</h2><div class="controls" id="head-controls"></div><p class="hint">Head 1–4 are radians (±1). The mouth is motor 34, 0–30°, and is sent with the 50 ms command heartbeat. It is not part of the policy observation.</p></section>
-<section><h2>Action smoothing</h2><div class="controls"><label>Leg α<input id="leg-alpha" type="range" min="0" max="0.95" value="0.45" step="0.05" disabled></label><label>Head α<input id="head-alpha" type="range" min="0" max="0.95" value="0.45" step="0.05" disabled></label></div><p class="hint">现有IPC不提供此设置，保持原配置；此处不修改滤波参数。</p></section>
-<section class="telemetry"><h2>IMU and servos</h2><div class="telemetry-grid"><div class="imu-lines"><div><b>acc</b><span id="acc-values">—</span></div><div><b>gyro</b><span id="gyro-values">—</span></div><div><b>grav</b><span id="gravity-values">—</span></div></div><div class="table"><table><thead><tr><th>ID</th><th>°</th><th>Target</th></tr></thead><tbody id="joints"></tbody></table></div></div><p class="hint" id="command-health">Waiting for command echo…</p></section>
-<details><summary>robotd最近日志</summary><pre id="runtime-log">—</pre></details>
-</main><script src="app.js"></script></html>
+<html lang="zh-CN" data-theme="night">
+<head><meta charset="utf-8"><meta name="setup-port" content="__SETUP_PORT__"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Easyduck · 机器人控制</title><link rel="stylesheet" href="style.css"></head>
+<body>
+<div class="pcb" aria-hidden="true"><svg viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMid slice"><g class="traces">
+<path d="M0 110H210L290 190H620L700 270H1220L1300 350H1600"/><path d="M0 360H170L250 440H530L610 360H960L1040 440H1600"/><path d="M1600 100H1360L1280 180H1010L930 100H780"/><path d="M0 800H300L380 720H760L840 640H1250L1330 720H1600"/><path d="M120 0V230L200 310V650L280 730V1000"/><path d="M1510 0V450L1430 530V800L1350 880V1000"/><path d="M0 930H520L600 850H1040L1120 930H1600"/>
+</g><g class="pads"><circle cx="620" cy="190" r="5"/><circle cx="1010" cy="180" r="5"/><circle cx="530" cy="440" r="5"/><circle cx="1250" cy="640" r="5"/><circle cx="600" cy="850" r="5"/></g></svg></div>
+<div class="wrap"><header class="top"><div class="brand"><span class="brand-mark" aria-hidden="true">ed<span>·</span></span><div class="titles"><b>EASYDUCK</b><span>ROBOT CONTROL / 泰山派 1M · HD1910</span></div></div><nav class="top-nav page-nav" aria-label="页面切换"><a id="nav-settings">连接设置 ↗</a><a id="nav-calibration">实物标定台 ↗</a></nav><div class="header-actions"><button id="theme-button" type="button" aria-label="切换暗亮主题">☼ 亮色</button><button class="stop" id="stop">断力 / Torque off</button></div></header>
+
+<main class="page console-page">
+<section class="connection-strip" aria-label="控制入口"><div class="connection-info">控制端 <b id="control-owner">等待连接</b><span>手柄 <span id="pad-connection">未知</span></span><span id="control-rule">手柄优先</span></div><div class="buttons"><button id="use-web">使用网页控制</button><button id="use-pad">恢复手柄优先</button></div></section>
+<section class="metrics" aria-label="实时状态"><article><small>状态推送</small><strong id="rx">—</strong></article><article><small>主控循环</small><strong id="rl">—</strong></article><article><small>舵机状态</small><strong id="servos">—</strong></article><article><small>IMU</small><strong id="imu">—</strong></article></section>
+<div class="status-message" id="message" role="status">正在连接机器人…</div>
+<div class="console-grid">
+<section class="card control-panel" aria-label="机器人操作">
+<div class="panel-heading"><h2>机器人操作</h2><span id="mode">—</span></div>
+<div class="buttons mode-buttons"><button data-mode="shadow" disabled title="当前网页未开放仅推理模式">仅推理</button><button data-mode="hold">默认站姿</button><button data-mode="policy">行走 / 起身</button><button id="pick">捡物</button><button id="roulade" disabled title="当前网页未开放滚翻控制">滚翻</button></div>
+<div class="motion-heading"><h3>移动控制</h3><button id="zero">移动归零</button></div>
+<div class="joysticks"><div class="joystick-side"><label id="left-label">前进 / 横移</label><div class="joy" id="joy-left" role="group" aria-labelledby="left-label"><div class="knob"></div></div><p class="joy-value">vx <span id="vxValue">0.00</span> · vy <span id="vyValue">0.00</span></p></div><div class="joystick-side"><label id="right-label">转向</label><div class="joy" id="joy-right" role="group" aria-labelledby="right-label"><div class="knob"></div></div><p class="joy-value">ωz <span id="wzValue">0.00</span></p></div></div>
+<div class="head-heading"><h3>头部与嘴部</h3><span>头部 ±1 rad · 嘴部 0–30°</span></div><div class="controls" id="head-controls"></div>
+<p class="key-note"><kbd>W / S</kbd> 前后 <kbd>A / D</kbd> 横移 <kbd>Q / E</kbd> 转向 <kbd>Space</kbd> 断力</p>
+</section>
+<section class="card data-panel" aria-label="实时数据">
+<div class="panel-heading"><h2>实时数据</h2><span class="live-label">LIVE</span></div>
+<div class="policy-strip"><div><small>实际策略</small><strong id="recovery-phase">—</strong></div><div><small>躯干倾角</small><strong id="tilt-angle">—</strong></div><div><small>起身流程</small><strong id="recovery-timer">—</strong></div></div>
+<div class="model-line"><small>当前模型</small><span id="active-model">—</span></div>
+<div class="imu-lines"><div><b>acc</b><span id="acc-values">—</span></div><div><b>gyro</b><span id="gyro-values">—</span></div><div><b>grav</b><span id="gravity-values">—</span></div></div>
+<div class="table"><table><thead><tr><th>舵机 ID</th><th>实际角度 °</th><th>目标角度 °</th></tr></thead><tbody id="joints"></tbody></table></div>
+<p class="hint" id="command-health">等待指令反馈…</p>
+</section></div>
+<div class="diagnostics">
+<details class="card"><summary>操作说明</summary><p class="hint">默认站姿会上力；行走 / 起身启动策略；捡物请求 4 秒动作。打开页面或切换主题不会自动上力。窗口失焦或页面隐藏时移动输入归零，关闭页面释放网页控制权。</p><p class="hint">切换控制端会停止策略并保持当前姿态。进入标定会断力并停止正式控制，请先放稳机器人。状态请求成功不等于动作完成。</p><p class="hint">摇杆松手归零，最大速度 vx ±0.4、vy ±0.3、ωz ±1.0。头部参数单位为弧度，嘴部为 34 号舵机。</p></details>
+<details class="card"><summary>标定配置状态</summary><p id="calibration-status" class="hint">标定状态：等待读取</p></details>
+<details class="card"><summary>动作平滑配置</summary><div class="controls"><label>腿部 α<input id="leg-alpha" type="range" min="0" max="0.95" value="0.45" step="0.05" disabled></label><label>头部 α<input id="head-alpha" type="range" min="0" max="0.95" value="0.45" step="0.05" disabled></label></div><p class="hint">现有 IPC 不提供此设置，保持原配置。</p></details>
+<details class="card"><summary>robotd 最近日志</summary><pre id="runtime-log">—</pre></details>
+</div></main></div><script src="app.js"></script></body></html>

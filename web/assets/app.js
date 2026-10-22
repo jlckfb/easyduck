@@ -1,4 +1,14 @@
 const $=id=>document.getElementById(id);
+// Theme state is shared with connection setup; it never sends control requests.
+function setTheme(theme){
+ const selected=theme==='day'?'day':'night';
+ document.documentElement.dataset.theme=selected;
+ $('theme-button').textContent=selected==='day'?'☾ 暗色':'☼ 亮色';
+ $('theme-button').setAttribute('aria-pressed',String(selected==='day'));
+ try{localStorage.setItem('easyduck-theme',selected);}catch(_){}
+}
+try{setTheme(localStorage.getItem('easyduck-theme')||'night');}catch(_){setTheme('night');}
+$('theme-button').onclick=()=>setTheme(document.documentElement.dataset.theme==='day'?'night':'day');
 let statusBusy=false, commandBusy=false, commandPending=false;
 const controlId=globalThis.crypto?.randomUUID?.()||`${Date.now()}-${Math.random().toString(16).slice(2)}`;
 let controlGeneration=null, webAllowed=false;
