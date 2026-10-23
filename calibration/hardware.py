@@ -21,7 +21,6 @@ def payload(req,p,expected):
 class ServoTimeout(TimeoutError):
     """A missing response, distinct from malformed replies and device alarms."""
 
-
 class Bus:
     def __init__(self,path='/dev/ttyS3',speed_restore_path=None,position_limits=None):
         self.speed_restore_path=Path(speed_restore_path) if speed_restore_path else None
@@ -84,14 +83,11 @@ class Bus:
         if addr==56 and n>=2:
             raw=int.from_bytes(data[:2],'little')
             count=self.signed_position(raw)
-            lo,hi=self.position_limits.get(sid,[0,4095])
-            # Select the equivalent angle nearest the saved joint travel window.
-            import math
-            turns=math.floor((count-(lo+hi)/2)/4096+.5)
-            logical=count-turns*4096
+            # Feedback must remain readable before this robot has been calibrated.
+            # Whole turns come from the encoder, never from a previous travel window.
+            logical=count%4096
             self.raw_positions[sid]=raw
             self.turn_offsets[sid]=count-logical
-            if not 0<=logical<=4095:raise IOError('位置超出标定单圈范围')
             data=logical.to_bytes(2,'little')+data[2:]
         elif addr==42 and n==2:
             logical=self.signed_position(int.from_bytes(data,'little'))-self.turn_offsets.get(sid,0)
@@ -104,6 +100,8 @@ class Bus:
             logical=int.from_bytes(bytes(data),'little')
             if not 0<=logical<=4095:raise ValueError('无效单圈目标')
             physical=logical+self.turn_offsets[sid]
+            if not 0<=physical<4096 and self.read(sid,33,1)==b'\4':
+                raise IOError('ID %s 多圈计数未复位，单圈模式不能执行该目标；请先松力矩再上力' % sid)
             data=self.position_word(physical).to_bytes(2,'little')
         self.write_raw(sid,addr,data)
 
@@ -116,19 +114,47 @@ class Bus:
             self.write(sid,44,list(current))
             if self.read(sid,44,2)!=current: raise IOError('电流限制恢复回读失败')
 
-    def reset_head_yaw_turns(self,sid):
-        raw=getattr(self,'raw_positions',{}).get(sid,0)
+    def center_snapshot(self,sid):
+        if self.read_raw(sid,40,1)!=b'\0': raise ValueError('设置硬件中位前必须先松力矩')
+        mode=self.read_raw(sid,33,1)[0]
+        if mode not in (0,4): raise ValueError('舵机不是位置模式，不能设置中位')
+        return {'position_raw':int.from_bytes(self.read_raw(sid,56,2),'little'),
+                'offset_hex':self.read_raw(sid,31,2).hex(),
+                'limits_hex':self.read_raw(sid,9,4).hex(),
+                'gains_hex':self.read_raw(sid,50,2).hex(),'mode':mode}
+
+    def set_center(self,sid,before):
+        current=self.center_snapshot(sid)
+        fields=('offset_hex','limits_hex','gains_hex','mode')
+        drift=abs(self.signed_position(current['position_raw'])-self.signed_position(before['position_raw']))
+        if any(current[k]!=before[k] for k in fields) or drift>16:
+            raise ValueError('舵机位置或参数已变化，请保持静止后重试')
+        # HD1910 MID sets the persistent hardware center; RESET only clears turns.
+        for _ in range(5):
+            os.write(self.fd,packet(sid,0x0b,[]));self.t.tcdrain(self.fd);time.sleep(.01)
+        time.sleep(.1)
+        after=self.center_snapshot(sid)
+        position=self.signed_position(after['position_raw'])
+        if abs(position-2048)>16: raise IOError('硬件中位回读不在2048附近；指令可能已写入，请保持断力并核对')
+        for key in ('limits_hex','gains_hex','mode'):
+            if after[key]!=before[key]: raise IOError('设置中位后%s发生变化，未确认成功'%key)
+        self.raw_positions[sid]=after['position_raw'];self.turn_offsets[sid]=0
+        return {'before':before,'after':after,'position':position}
+
+    def reset_position_turns(self,sid,*,fresh=True):
+        raw=int.from_bytes(self.read_raw(sid,56,2),'little') if fresh else getattr(self,'raw_positions',{}).get(sid,0)
         count=self.signed_position(raw)
-        if sid!=32 or 0<=count<4096:return
-        if self.read(sid,40,1)!=b'\0':raise IOError('ID 32 must be released before turn reset')
-        if self.read(sid,9,4)!=bytes([0,0,255,15]):raise IOError('ID 32 turn reset requires single-turn limits')
+        if 0<=count<4096:return {'before':count,'after':count,'changed':False}
+        if self.read(sid,40,1)!=b'\0':raise IOError('ID %s 清除圈数前必须先松开力矩'%sid)
+        if self.read(sid,9,4)!=bytes([0,0,255,15]):raise IOError('ID %s 硬件角度范围不是0～4095，未执行清圈；需先核对舵机模式和硬件范围'%sid)
         # RESET clears volatile turns; it does not recalibrate or rewrite EEPROM.
         os.write(self.fd,packet(sid,0x0a,[]));self.t.tcdrain(self.fd);time.sleep(.003)
         after=self.signed_position(int.from_bytes(self.read_raw(sid,56,2),'little'))
         if not 0<=after<4096 or abs(after-count%4096)>8 or self.read(sid,40,1)!=b'\0':
-            raise IOError('ID 32 turn reset verification failed')
+            raise IOError('ID %s 清除圈数后回读不一致，请保持断力并核对'%sid)
         self.turn_offsets[sid]=0
         self.raw_positions[sid]=after
+        return {'before':count,'after':after,'changed':True}
 
     def torque(self,sid,on):
         if on:
@@ -138,7 +164,8 @@ class Bus:
             if int.from_bytes(p,'little')>4095: raise IOError('位置读数超出单圈范围')
             # This board's HD1910 servos use position mode 4; never rewrite mode.
             if self.read(sid,33,1) not in (b'\0',b'\4'): raise IOError('舵机不是位置模式，不能上力保持位置')
-            self.reset_head_yaw_turns(sid)
+            # torque() just captured the current raw position through read().
+            self.reset_position_turns(sid,fresh=False)
             p=self.read(sid,56,2)
             self.ensure_current_limit(sid)
             if self.read(sid,46,2)==bytes(2):
@@ -207,6 +234,16 @@ class Bus:
     def close(self): os.close(self.fd)
 
 class MockBus:
+    def reset_position_turns(self,sid):
+        if self.on[sid]:raise ValueError('清除圈数前必须先松开力矩')
+        before=self.pos[sid];self.pos[sid]=before%4096
+        return {'before':before,'after':self.pos[sid],'changed':before!=self.pos[sid]}
+    center_snapshot=Bus.center_snapshot
+    def set_center(self,sid,before):
+        self.center_snapshot(sid)
+        self.pos[sid]=2048
+        if hasattr(self,'raw_positions'):self.raw_positions[sid]=2048
+        return {'before':before,'after':self.center_snapshot(sid),'position':2048}
     def __init__(self,profile):
         self.pos={int(k):v for k,v in profile['zero'].items()}; self.on={i:False for i in self.pos}; self.goals=[];self.speeds={}
     def read(self,sid,addr,n):
@@ -219,7 +256,6 @@ class MockBus:
         if addr==5: return bytes([sid])
         if addr==55: return bytes([getattr(self,'locks',{}).get(sid,1)])
         return self.read(sid,addr,n)
-
     def write_raw(self,sid,addr,data):
         if sid not in self.pos: return
         if addr==5:
@@ -230,7 +266,6 @@ class MockBus:
             self.locks[sid]=data[0]
         elif addr==40:self.on[sid]=bool(data[0])
         else:raise ValueError('模拟 ID 设置禁止此写入')
-
     def torque(self,sid,on): self.on[sid]=on; return on
     def set_speed(self,sid,units): self.speeds[sid]=units
     def goal(self,sid,count): self.goals.append((sid,count)); self.pos[sid]=count

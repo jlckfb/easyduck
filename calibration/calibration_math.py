@@ -64,6 +64,9 @@ def validate_profile(d):
         if type(z) is not int or type(s) is not int or s not in (-1,1) or len(lim)!=2 or any(type(x) is not int for x in lim):
             raise ValueError('零点/范围必须是整数，方向只能为±1')
         if not 0<=lim[0]<=z<=lim[1]<=4095 or lim[0]==lim[1]: raise ValueError('零点必须在有效范围内（0～4095）')
+    pending=d.get('limits_pending',[])
+    if not isinstance(pending,list) or any(type(i) is not int or i not in IDS for i in pending) or len(set(pending))!=len(pending):
+        raise ValueError('未确认限位列表无效')
     imu=d['imu']; mount=imu['mount']; bias=imu['gyro_bias']
     if len(mount)!=4 or len(bias)!=3 or not all(type(x) in (int,float) and math.isfinite(x) for x in mount+bias):
         raise ValueError('IMU参数无效')

@@ -35,7 +35,7 @@ class MotionController:
         rate=units*SPEED_UNIT_DEG_S/COUNT_DEG
         self.job={'id':sid,'targets':list(targets),'stage':0,'position':float(current),'sent':current,
                   'rate':rate,'last':now,'deadline':now+abs(targets[0]-current)/rate+5,
-                  'kind':kind,'labels':labels,'settled':0,'previous_feedback':current,'results':[]}
+                  'kind':kind,'labels':labels,'tolerance':min(4,abs(targets[0]-current)//4),'settled':0,'previous_feedback':current,'results':[]}
         self.status={'active':True,'id':sid,'kind':kind,'stage':0,'target':targets[0],
                      'speed_deg_s':round(units*SPEED_UNIT_DEG_S,3),'message':labels[0]}
         return self.status.copy()
@@ -59,15 +59,22 @@ class MotionController:
             # not turn normal gravity deflection into an automatic torque cut.
             stable=abs(r['count']-j['previous_feedback'])<=2
             j['previous_feedback']=r['count']
-            settled=count==target and (abs(r['count']-target)<=4 or stable)
+            reached=abs(r['count']-target)<=j['tolerance']
+            settled=count==target and (reached or stable)
             j['settled']=j['settled']+1 if settled else 0
             if j['settled']>=3:
                 j['results'].append({'target':target,'actual':r['count'],'error_counts':r['count']-target})
                 if j['stage']+1==len(j['targets']):
                     message={'limits':'上下限测试流程完成，保持中间目标','home':'回HOME目标已下发，保持中','step':'步进目标已下发，保持中'}[j['kind']]
-                    self.status.update(active=False,message=message,results=j['results'],feedback_error_counts=r['count']-target)
+                    warning=not reached
+                    if warning:message='目标已发送，但实际未到位；保持当前目标，请检查负载、供电或关节阻挡'
+                    self.status.update(active=False,message=message,warning=warning,reached=reached,actual=r['count'],results=j['results'],feedback_error_counts=r['count']-target)
                     self.job=None
                 else:
+                    if not reached:
+                        self.status.update(active=False,warning=True,reached=False,actual=r['count'],message='本段未到目标，未继续下一段；保持当前目标',results=j['results'],feedback_error_counts=r['count']-target)
+                        self.job=None
+                        return
                     j['stage']+=1;j['settled']=0
                     target=j['targets'][j['stage']];j['deadline']=now+abs(target-j['position'])/j['rate']+5
                     self.status.update(stage=j['stage'],target=target,message=j['labels'][j['stage']])
@@ -133,10 +140,11 @@ class MotionCoordinator:
                            'speed_deg_s':self.members[0][1].status['speed_deg_s']}
         return self.group_status.copy()
 
-    def tick(self,feedback,now=None):
+    def tick(self,feedback,now=None,only=None):
         if self.mode!='group':self.single.tick(feedback,now);return
         if not self.job:return
         for sid,m in self.members:
+            if only is not None and sid!=only:continue
             m.tick(feedback,now)
             if m.status.get('error'):
                 self.cancel('ID%s 回HOME失败：%s'%(sid,m.status['message']),release=True,error=True)
@@ -145,6 +153,8 @@ class MotionCoordinator:
         self.group_status.update(active=done<len(self.members),message='15个舵机回HOME目标已下发，保持中' if done==len(self.members) else '正在缓慢回HOME，进度 %s/15'%done)
         if done==len(self.members):
             self.group_status['results']={sid:m.status.get('results',[]) for sid,m in self.members}
+            missed=[sid for sid,m in self.members if m.status.get('warning')]
+            if missed:self.group_status.update(warning=True,reached=False,message='HOME目标已下发，但以下关节未到位：'+str(missed))
 
     def cancel(self,message='已停止并保持当前位置',release=False,error=False):
         if self.mode!='group':return self.single.cancel(message,release,error)

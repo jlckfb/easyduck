@@ -90,45 +90,56 @@ class App:
             self.reader=Lsm6dsv16xReader(2,50,delta_quat=(1,0,0,0)); self.reader.start()
         self.thread=threading.Thread(target=self.poll,daemon=True); self.thread.start()
 
+    def read_row(self,sid):
+        try:
+            b=self.bus.read(sid,56,15)
+            p=int.from_bytes(b[:2],'little')
+            if not 0<=p<=4095: raise IOError('位置超出单圈范围')
+            torque=self.bus.read(sid,40,1)[0]
+            if torque not in (0,1): raise IOError('力矩寄存器不是0/1')
+            raw=int.from_bytes(b[13:15],'little')
+            current=-(raw&32767) if raw&32768 else raw
+            raw_position=getattr(self.bus,'raw_positions',{}).get(sid,p)
+            self.rows[sid]={'count':p,'position_raw':raw_position,'position_signed':Bus.signed_position(raw_position),
+                'torque':bool(torque),'voltage':b[6]/10,'temperature':b[7],
+                'current_raw':current,'current_ma':current*6.5,'at':time.monotonic(),'error':None}
+        except Exception as e:
+            self.rows[sid]={'count':None,'torque':None,'at':time.monotonic(),'error':str(e)}
+
     def poll(self):
         while not self.stop.is_set():
             start=time.monotonic()
             with self.lock:
                 id_mode=self.id_setup.active
-                if id_mode:
-                    self.id_setup.tick()
-                else:
-                    for sid in IDS:
-                        try:
-                            b=self.bus.read(sid,56,15)
-                            p=int.from_bytes(b[:2],'little')
-                            if not 0<=p<=4095: raise IOError('位置超出单圈范围')
-                            torque=self.bus.read(sid,40,1)[0]
-                            if torque not in (0,1): raise IOError('力矩寄存器不是0/1')
-                            # HD1910 register 69/70: bit15 sign, 6.5mA per unit.
-                            raw=int.from_bytes(b[13:15],'little')
-                            current=-(raw&32767) if raw&32768 else raw
-                            self.rows[sid]={'count':p,'torque':bool(torque),'voltage':b[6]/10,
-                                            'temperature':b[7],'current_raw':current,'current_ma':current*6.5,
-                                            'at':time.monotonic(),'error':None}
-                        except Exception as e:
-                            self.rows[sid]={'count':None,'torque':None,'at':time.monotonic(),'error':str(e)}
-                    self.motion.tick(self.rows)
-                    if self.reader:
-                        s=self.reader.get_latest(); age=time.perf_counter()-s.timestamp_s
-                        if s.valid and 0<=age<.3:
-                            self.imu={'quat':list(s.quat),'gyro':list(s.gyro),'acc':list(s.acc),'at':time.monotonic()}
-                            self.history.append(copy.deepcopy(self.imu)); self.history=self.history[-160:]
-                        else: self.imu=None
-                    elif self.args.mock:
-                        self.imu={'quat':list(DEFAULT_MOUNT),'gyro':[0,0,0],'acc':[1,0,0],'at':time.monotonic()}
-                        self.history.append(copy.deepcopy(self.imu)); self.history=self.history[-160:]
+                if id_mode:self.id_setup.tick()
+                job=self.motion.job if not id_mode else None
+                ids=(job.get('ids') or [job['id']]) if job else list(IDS)
             if id_mode:
-                # Yield outside the serial lock so state and command requests can run.
                 self.stop.wait(.005)
                 continue
+            for sid in ids:
+                with self.lock:
+                    if self.id_setup.active or self.stop.is_set():break
+                    # During motion, service only its members; slow unrelated
+                    # servos must not delay the selected joint's trajectory.
+                    if job and not self.motion.owns(sid):continue
+                    self.read_row(sid)
+                    if self.motion.owns(sid):self.motion.tick(self.rows,only=sid)
+                # Yield between transactions, even when a round overruns.
+                self.stop.wait(.001)
+            with self.lock:
+                if self.reader:
+                    sample=self.reader.get_latest();age=time.perf_counter()-sample.timestamp_s
+                    if sample.valid and 0<=age<.3:
+                        self.imu={'quat':list(sample.quat),'gyro':list(sample.gyro),'acc':list(sample.acc),'at':time.monotonic()}
+                        self.history.append(copy.deepcopy(self.imu));self.history=self.history[-160:]
+                    else:self.imu=None
+                elif self.args.mock:
+                    self.imu={'quat':list(DEFAULT_MOUNT),'gyro':[0,0,0],'acc':[1,0,0],'at':time.monotonic()}
+                    self.history.append(copy.deepcopy(self.imu));self.history=self.history[-160:]
             elapsed=time.monotonic()-start
-            self.hz=1/max(.06,elapsed); self.stop.wait(max(0,.06-elapsed))
+            self.hz=1/max(.06,elapsed)
+            self.stop.wait(max(.001,.06-elapsed))
 
     def state(self):
         with self.lock:
@@ -182,6 +193,78 @@ class App:
             if op=='id_change':
                 return self.id_setup.change(d.get('id'),d.get('new_id'),d.get('single_confirmed'))
             if self.id_setup.active: raise ValueError('ID 分配模式下禁止运动和标定保存，请先返回姿态标定')
+            if op=='reset_turns':
+                if self.motion.job: raise ValueError('请先停止运动，再清除圈数')
+                if d.get('revision')!=self.revision: raise ValueError('草稿已变化，请刷新后重试')
+                sid=d.get('id')
+                if type(sid) is not int or sid not in IDS: raise ValueError('无效舵机ID')
+                if d.get('confirmed') is not True: raise ValueError('请确认仅清除当前关节累计圈数，不设置硬件中位')
+                if self.bus.read_raw(sid,40,1)!=b'\0': raise ValueError('请先松开此关节的力矩，再清除圈数')
+                result=self.bus.reset_position_turns(sid)
+                self.read_row(sid)
+                return {'message':'ID%s 累计位置 %s → %s；%s，保持断力，HOME、方向、范围和硬件中位均未修改'%(sid,result['before'],result['after'],'圈数已清除' if result['changed'] else '无需清圈'),'result':result}
+            if op=='center_servo':
+                if self.motion.job: raise ValueError('请先停止运动，再设置硬件中位')
+                if d.get('revision')!=self.revision: raise ValueError('草稿已变化，请刷新后重试')
+                sid=d.get('id')
+                if type(sid) is not int or sid not in IDS: raise ValueError('无效舵机ID')
+                if d.get('confirmed') is not True: raise ValueError('请确认已将关节摆到正确的安装中位；此操作改变舵机永久中位')
+                if sid not in self.profile.get('limits_pending',[]): raise ValueError('此关节已有已确认限位；请先按新机器人流程清除旧限位')
+                before=self.bus.center_snapshot(sid)
+                record={'id':sid,'before':before,'saved_profile':copy.deepcopy(self.saved),'draft_profile':copy.deepcopy(self.profile)}
+                journal=Path(self.args.profile).parent/'calibration-backups'/('servo-center-%s-%s.json'%(sid,time.time_ns()))
+                atomic_save(journal,record)
+                try:
+                    result=self.bus.set_center(sid,before)
+                except Exception as e:
+                    record['error']=str(e);atomic_save(journal,record)
+                    raise
+                record['result']=result;atomic_save(journal,record)
+                saved=copy.deepcopy(self.saved);draft=copy.deepcopy(self.profile)
+                for profile in (saved,draft):
+                    profile['zero'][str(sid)]=result['position']
+                    profile['lim'][str(sid)]=[0,4095]
+                    profile['limits_pending']=list(dict.fromkeys(profile.get('limits_pending',[])+[sid]))
+                    profile.pop('reference_pose',None)
+                    validate_profile(profile)
+                atomic_save(self.args.profile,saved)
+                self.saved=saved;self.profile=draft;self.revision+=1
+                return {'message':'ID%s 硬件中位已回读确认：%s，保持断力；请重新记录整机HOME后再使用实时3D。未修改其他舵机、P/D或限流'%(sid,result['position']),'result':result}
+            if op=='reset_limits':
+                if self.motion.job: raise ValueError('请先停止运动，再清除旧限位')
+                if d.get('revision')!=self.revision: raise ValueError('草稿已变化，请刷新后重试')
+                if d.get('confirmed') is not True: raise ValueError('请确认这是新机器人，需要清除旧限位')
+                saved=copy.deepcopy(self.saved)
+                saved['lim']={str(sid):[0,4095] for sid in IDS}
+                saved['limits_pending']=list(IDS)
+                validate_profile(saved)
+                atomic_save(self.args.profile,saved)
+                self.saved=saved
+                self.profile['lim']=copy.deepcopy(saved['lim'])
+                self.profile['limits_pending']=list(IDS)
+                self.revision+=1
+                return {'message':'旧限位已清除并备份；方向和HOME草稿保留。0～4095只是编码器范围，未确认机械限位前不能运行上下限测试'}
+            if op=='confirm_limits':
+                if self.motion.job: raise ValueError('请先停止运动，再确认限位')
+                if d.get('revision')!=self.revision: raise ValueError('草稿已变化，请刷新后重试')
+                sid=d.get('id')
+                if type(sid) is not int or sid not in IDS: raise ValueError('无效舵机ID')
+                validate_profile(self.profile)
+                self.profile['limits_pending']=[i for i in self.profile.get('limits_pending',[]) if i!=sid]
+                self.revision+=1
+                return {'message':'ID%s 当前限位已确认到草稿，请保存标定后使用'%sid}
+            if op=='capture_home_one':
+                if self.motion.job: raise ValueError('请先停止运动，再记录HOME')
+                if d.get('revision')!=self.revision: raise ValueError('草稿已变化，请刷新后重试')
+                sid=d.get('id')
+                if type(sid) is not int or sid not in IDS: raise ValueError('无效舵机ID')
+                p=int.from_bytes(self.bus.read(sid,56,2),'little')
+                lo,hi=self.profile['lim'][str(sid)]
+                if not 0<=p<=4095 or not lo<=p<=hi: raise ValueError('当前位置超出当前范围，请先核对该关节限位')
+                profile=copy.deepcopy(self.profile);profile['zero'][str(sid)]=p
+                validate_profile(profile)
+                self.profile=profile;self.revision+=1
+                return {'message':'ID%s 的当前位置 %s 已记为HOME草稿；点击保存标定后生效，舵机不动作'%(sid,p),'position':p}
             if op=='capture_home_all':
                 if self.motion.job: raise ValueError('请先停止运动，再记录全部HOME')
                 if d.get('revision')!=self.revision: raise ValueError('标定已变化，请刷新后重试')
@@ -231,6 +314,17 @@ class App:
                         except Exception:failures.append(sid)
                     raise IOError('全部上力失败，已逐个尝试断力：%s；断力未确认：%s'%(e,failures)) from e
                 return {'message':'15个舵机已上力并保持各自当前位置，已逐个回读确认'}
+            if op=='home_one':
+                sid=d.get('id')
+                if type(sid) is not int or sid not in IDS:raise ValueError('无效舵机ID')
+                if d.get('revision')!=self.revision:raise ValueError('草稿已变化，请刷新后重试')
+                key=str(sid)
+                if any(self.profile[field][key]!=self.saved[field][key] for field in ('zero','sign','lim')) or ((sid in self.profile.get('limits_pending',[]))!=(sid in self.saved.get('limits_pending',[]))):
+                    raise ValueError('请先保存当前关节或撤销该关节的修改，再回已保存 HOME')
+                target=self.saved['zero'][key]
+                lo,hi=self.saved['lim'][key]
+                if not 0<=target<=4095 or not lo<=target<=hi:raise ValueError('已保存 HOME 超出当前关节活动范围，请先核对标定')
+                return self.motion.start(sid,[target],d.get('speed',5),'home',['ID%s 正在缓慢回已保存 HOME'%sid])
             if op=='home':
                 if d.get('revision')!=self.revision:raise ValueError('草稿已变化，请刷新后重试')
                 if self.profile!=self.saved:raise ValueError('请先保存标定或撤销草稿，再回已保存的HOME')
@@ -273,9 +367,12 @@ class App:
                         if target>=current: raise ValueError('已高于上限，只允许朝范围内移动')
                         target=max(target,lo)
                     else:target=min(hi,max(lo,target))
-                    if target==current: raise ValueError('已到所设限位，不能继续此方向')
+                    if target==current:
+                        if sid in self.profile.get('limits_pending',[]): raise ValueError('已到编码器单圈边界，不能继续此方向；这不是机械限位，不能按整圈绕回')
+                        raise ValueError('已到所设限位，不能继续此方向')
                     targets=[target];labels=['正在步进，完成后保持'];kind='step'
                 else:
+                    if sid in self.profile.get('limits_pending',[]): raise ValueError('该关节尚未确认机械限位，不能自动测试；请先手动设置上下限并确认')
                     targets=[hi,lo,round((lo+hi)/2)]
                     labels=['正在缓慢前往计数上限','正在缓慢前往计数下限','正在回到上下限中间'];kind='limits'
                 result=self.motion.start(sid,targets,d.get('speed',5),kind,labels)
@@ -285,16 +382,34 @@ class App:
                 if self.motion.job: raise ValueError('请先停止实物运动，再修改标定')
                 if d.get('revision')!=self.revision: raise ValueError('草稿已变化，请刷新页面重试')
                 self.profile=copy.deepcopy(validate_profile(d['profile'])); self.revision+=1
-                return {'message':'已预览；尚未保存'}
+                return {'message':'编辑已更新到草稿；尚未保存'}
             if op=='discard':
                 if self.motion.job: raise ValueError('请先停止实物运动，再撤销草稿')
                 self.profile=copy.deepcopy(self.saved); self.revision+=1; self.samples={}
                 return {'message':'已恢复已保存参数'}
+            if op=='save_one':
+                if self.motion.job: raise ValueError('请先停止实物运动，再保存')
+                if d.get('revision')!=self.revision: raise ValueError('草稿已变化，请刷新页面重试')
+                sid=d.get('id')
+                if type(sid) is not int or sid not in IDS: raise ValueError('无效舵机ID')
+                key=str(sid);saved=copy.deepcopy(self.saved);draft=copy.deepcopy(self.profile)
+                changed_pose=any(saved[field][key]!=draft[field][key] for field in ('zero','sign'))
+                for field in ('zero','sign','lim'):saved[field][key]=copy.deepcopy(draft[field][key])
+                if 'limits_pending' in saved or 'limits_pending' in draft:
+                    pending=set(saved.get('limits_pending',[]))
+                    if sid in draft.get('limits_pending',[]):pending.add(sid)
+                    else:pending.discard(sid)
+                    saved['limits_pending']=[i for i in IDS if i in pending]
+                if changed_pose:
+                    saved.pop('reference_pose',None);draft.pop('reference_pose',None)
+                saved['saved_at']=time.strftime('%Y-%m-%d %H:%M:%S');draft['saved_at']=saved['saved_at']
+                validate_profile(saved);validate_profile(draft)
+                atomic_save(self.args.profile,saved)
+                self.saved=saved;self.profile=draft;self.revision+=1
+                return {'message':'ID%s 的HOME、方向和活动范围已保存并备份；其他关节和IMU草稿未保存，力矩状态不变'%sid}
             if op=='save':
                 if self.motion.job: raise ValueError('请先停止实物运动，再保存')
                 if d.get('revision')!=self.revision: raise ValueError('草稿已变化，请刷新页面重试')
-                for sid in IDS:
-                    if self.bus.read(sid,40,1)[0]!=0: raise ValueError('保存前请先全部松力矩')
                 validate_profile(self.profile)
                 saved=copy.deepcopy(self.profile); saved['saved_at']=time.strftime('%Y-%m-%d %H:%M:%S')
                 atomic_save(self.args.profile,saved); self.saved=saved; self.profile=copy.deepcopy(saved); self.revision+=1
