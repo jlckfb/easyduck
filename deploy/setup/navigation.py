@@ -88,10 +88,29 @@ class Navigator:
             finally: fcntl.flock(stream, fcntl.LOCK_UN)
 
     def switch(self, target, confirm=False):
-        if target not in ('setup', 'control', 'calibration'):
+        if target not in ('setup', 'control', 'calibration', 'servo_setup'):
             raise SetupError('invalid_target', '未知页面。')
         with self.lock():
             active = self.calibration_active()
+            if target == 'servo_setup':
+                if confirm is not True:
+                    raise SetupError('confirm_required','新机 ID 设置会停止正式控制。请放稳机器人，每次只新增一只待编号舵机；已编号且 ID 不重复的舵机可保留连接后确认。')
+                if active:
+                    state=self.api(self.calibration_port,'/api/state')
+                    if state.get('dirty') or state.get('motion',{}).get('active'):
+                        raise SetupError('calibration_busy','请先停止运动并保存或撤销草稿。')
+                else:
+                    self.unit('stop','padd.service','xgoduck-web.service','robotd.service')
+                    self.unit('start','xgoduck-calibration.service')
+                    self.wait_ready(self.calibration_port,'/api/state')
+                self.api(self.calibration_port,'/api/command',{'op':'id_enter'})
+                return {'port':self.calibration_port,'path':'/','message':'新机 ID 分配已就绪，不要求15个关节在线。'}
+            if active:
+                state=self.api(self.calibration_port,'/api/state')
+                if state.get('id_setup',{}).get('active'):
+                    if target=='setup':
+                        return {'port':None,'path':'/','message':'设置页已就绪，标定服务继续独占串口，正式控制保持停止。'}
+                    raise SetupError('id_setup_active','请先结束 ID 分配、接齐舵机并确认断力，再进入姿态标定或正式控制。')
             if target == 'calibration':
                 if not active:
                     if confirm is not True:

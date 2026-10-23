@@ -4,3 +4,6 @@
 #motionStatus.error{color:#ffb9a9}
 
 .page-nav{display:flex;flex-wrap:wrap;gap:12px;margin:12px 0}.page-nav a{display:inline-block;border:1px solid currentColor;border-radius:8px;padding:8px 14px;cursor:pointer;text-decoration:none;color:inherit}
+
+[hidden]{display:none!important}.cal-tabs{display:flex;gap:8px;max-width:1800px;margin:12px auto;padding:0 20px}.cal-tabs [aria-selected="true"]{border-color:var(--accent);color:var(--accent)}
+#servo-id-panel{max-width:920px;margin:20px auto;padding:24px;background:#18212b;border:1px solid var(--line);border-radius:10px;line-height:1.8}#servo-id-panel progress{width:100%;accent-color:var(--accent)}#servo-id-panel p{overflow-wrap:anywhere}#id-found button[aria-pressed="true"]{border-color:var(--accent);color:var(--accent)}#id-result{white-space:pre-wrap;user-select:text}body.id-mode main,body.id-mode header>.actions{display:none}#toast{left:auto;right:24px;transform:none;user-select:text}@media(max-width:600px){#servo-id-panel{margin:14px;padding:16px}.cal-tabs{padding:0 14px}#toast{right:14px;bottom:14px}}

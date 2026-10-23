@@ -18,6 +18,10 @@ def payload(req,p,expected):
     if len(p)-6!=expected: raise IOError('SCS反馈长度错误')
     return p[5:-1]
 
+class ServoTimeout(TimeoutError):
+    """A missing response, distinct from malformed replies and device alarms."""
+
+
 class Bus:
     def __init__(self,path='/dev/ttyS3',speed_restore_path=None,position_limits=None):
         self.speed_restore_path=Path(speed_restore_path) if speed_restore_path else None
@@ -60,7 +64,7 @@ class Bus:
                     p,buf=buf[:nbytes],buf[nbytes:]
                     got=payload(req,p,n)
                     if got is not None: return got
-        raise IOError('舵机ID %s读取超时'%sid)
+        raise ServoTimeout('舵机ID %s读取超时'%sid)
 
     def write_raw(self,sid,addr,data):
         os.write(self.fd,packet(sid,3,[addr]+list(data))); self.t.tcdrain(self.fd)
@@ -210,6 +214,23 @@ class MockBus:
         if addr==33: return bytes([0])
         if addr==56: return struct.pack('<H',self.pos[sid])+bytes(max(0,n-2))
         return bytes(n)
+    def read_raw(self,sid,addr,n):
+        if sid not in self.pos: raise ServoTimeout('模拟舵机无响应')
+        if addr==5: return bytes([sid])
+        if addr==55: return bytes([getattr(self,'locks',{}).get(sid,1)])
+        return self.read(sid,addr,n)
+
+    def write_raw(self,sid,addr,data):
+        if sid not in self.pos: return
+        if addr==5:
+            new=data[0];self.pos[new]=self.pos.pop(sid);self.on[new]=self.on.pop(sid)
+            if hasattr(self,'locks') and sid in self.locks:self.locks[new]=self.locks.pop(sid)
+        elif addr==55:
+            if not hasattr(self,'locks'):self.locks={}
+            self.locks[sid]=data[0]
+        elif addr==40:self.on[sid]=bool(data[0])
+        else:raise ValueError('模拟 ID 设置禁止此写入')
+
     def torque(self,sid,on): self.on[sid]=on; return on
     def set_speed(self,sid,units): self.speeds[sid]=units
     def goal(self,sid,count): self.goals.append((sid,count)); self.pos[sid]=count

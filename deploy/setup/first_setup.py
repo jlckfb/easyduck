@@ -159,7 +159,7 @@ def make_handler(app):
             path = urlsplit(self.path).path
             session = app.session(self.headers.get('Cookie',''))
             target = parse_qs(urlsplit(self.path).query).get('target', [''])[0]
-            target = target if target in ('setup', 'control', 'calibration') else ''
+            target = target if target in ('setup', 'control', 'calibration', 'servo_setup') else ''
             source = parse_qs(urlsplit(self.path).query).get('source', ['setup'])[0]
             source = source if source in ('setup', 'control', 'calibration') else 'setup'
             if path == '/navigate':

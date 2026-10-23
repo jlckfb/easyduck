@@ -5,6 +5,17 @@
 <script type="importmap">{"imports":{"three":"/vendor/three.module.js"}}</script>
 </head><body>
 <header><div><span class="eyebrow">XGODUCK / CALIBRATION</span><h1>实物标定台 <span id="connection">正在连接</span></h1></div><div class="actions"><button id="onAll">全部上力矩</button><button id="homeAll" class="primary">缓慢回 HOME</button><button id="stopAllMotion">停止并保持</button><button id="offAll" class="danger">全部松力矩</button></div></header><nav class="page-nav" aria-label="页面切换"><a id="nav-settings">连接设置</a><a id="nav-control">机器人控制</a></nav>
+<div class="cal-tabs" role="tablist" aria-label="标定功能"><button id="tab-calibration" role="tab" aria-selected="true">姿态与 IMU 标定</button><button id="tab-servo-id" role="tab" aria-selected="false">舵机 ID 分配</button></div>
+<section id="servo-id-panel" hidden aria-label="舵机 ID 分配">
+<h2>新机器人 · 逐只分配舵机 ID</h2><p>已编号舵机可保留连接，每次只新增一只出厂 ID 为 1 的舵机：扫描 → 选中 ID 1 → 选择未占用的安装关节 → 确认改号。不要同时接入两只同 ID 的舵机，扫描无法区分它们。</p>
+<p>此处只改 ID，不修改 P/D、限流、零点或位置，不会上力。完成后仍需为新机器人重新标定，不能直接使用旧机器人的 HOME。</p>
+<div class="actions"><button id="id-scan" class="primary">扫描 ID 0～253</button><button id="id-stop">停止扫描</button></div>
+<progress id="id-progress" max="254" value="0"></progress><p id="id-status" role="status"></p><div id="id-found" class="actions"></div>
+<p id="id-selected">尚未选中舵机</p><div class="fields"><label>安装关节 / 目标 ID<select id="id-joint"></select></label></div>
+<p><label><input id="id-single" type="checkbox">我确认只有一只舵机使用当前选中的 ID（其他不同 ID 的舵机可保留连接）</label></p>
+<div class="actions"><button id="id-relax">所选舵机松力矩</button><button id="id-change" class="primary">写入目标 ID 并核对</button></div>
+<p id="id-result" role="status"></p><small>改号写入舵机永久存储，成功后需重新扫描。若需改回原 ID，仍按同样流程逐只操作。</small>
+</section>
 <main><section class="visual"><div class="toolbar"><div><b id="modeLabel">实物实时跟随</b><small id="modelStatus">正在加载3D显示模型</small></div><div><button id="stopDemo" hidden>停止示范</button><button id="live">实时跟随</button><button id="reference">参考站姿</button><button id="resetCamera">重置视角</button></div></div>
 <div id="viewport"><div id="stale">等待新鲜反馈</div><div class="axisLegend">X 前 · 红　Y 左 · 绿　Z 上 · 蓝<br>拖动旋转 · 滚轮缩放</div></div>
 <div class="motionPanel"><b id="homeAlignment">旧HOME尚未与参考站姿对齐</b><p>先查看参考站姿，将实物摆到对应姿态，再记录全部HOME。记录只保存当前读数，不上力、不运动。</p><button id="captureHomeAll" class="primary">全部设为 HOME（记录当前位置）</button></div>
@@ -27,4 +38,4 @@
 <div class="actions"><button id="testLimits">缓慢测试：上限 → 下限 → 中间</button></div><small>测试使用已预览的计数上下限；中间是上下限的平均位置，不是HOME。设置时留出机械余量。只有点击测试才执行实物运动。</small></section>
 <div class="savebar"><span id="dirty">尚无修改</span><div class="actions"><button id="discard">撤销草稿</button><button id="export">导出标定</button><button id="save" class="primary">保存全部标定</button></div>
 <div class="actions"><button id="applyExit" class="danger">退出标定并应用到正式控制</button></div><small id="applyHelp">先保存或撤销草稿并全部松力矩。点击后依次停止标定、启动robotd、启动网页控制（9527）；robotd启动后处于xgo_off，不会上力。</small></div></aside></main>
-<div id="toast" role="status"></div><script type="module" src="app.js"></script></body></html>
+<div id="toast" role="status"></div><script type="module" src="app.js"></script><script defer src="servo-id.js"></script></body></html>

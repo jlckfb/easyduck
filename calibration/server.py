@@ -16,6 +16,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
 from calibration_math import *
 from hardware import Bus,MockBus
+from servo_setup import ServoSetup
 from motion import MotionCoordinator,COUNT_DEG
 
 ROOT=Path(__file__).resolve().parent
@@ -78,6 +79,9 @@ class App:
         self.rows={}; self.imu=None; self.samples={}; self.history=[]; self.hz=0
         self.bus=MockBus(self.profile) if args.mock else Bus(args.port,
             speed_restore_path='/etc/robot/calibration_speed_restore.json', position_limits=self.saved['lim'])
+        if args.mock and getattr(args,'mock_servo_id',None) is not None:
+            self.bus.pos={args.mock_servo_id:2048};self.bus.on={args.mock_servo_id:False}
+        self.id_setup=ServoSetup(self.bus,None if args.mock else getattr(args,'id_journal','/var/lib/easyduck/servo-id-changes.jsonl'))
         self.motion=MotionCoordinator(self.bus)
         self.reader=None
         if not args.mock:
@@ -90,31 +94,39 @@ class App:
         while not self.stop.is_set():
             start=time.monotonic()
             with self.lock:
-                for sid in IDS:
-                    try:
-                        b=self.bus.read(sid,56,15)
-                        p=int.from_bytes(b[:2],'little')
-                        if not 0<=p<=4095: raise IOError('位置超出单圈范围')
-                        torque=self.bus.read(sid,40,1)[0]
-                        if torque not in (0,1): raise IOError('力矩寄存器不是0/1')
-                        # HD1910 register 69/70: bit15 sign, 6.5mA per unit.
-                        raw=int.from_bytes(b[13:15],'little')
-                        current=-(raw&32767) if raw&32768 else raw
-                        self.rows[sid]={'count':p,'torque':bool(torque),'voltage':b[6]/10,
-                                        'temperature':b[7],'current_raw':current,'current_ma':current*6.5,
-                                        'at':time.monotonic(),'error':None}
-                    except Exception as e:
-                        self.rows[sid]={'count':None,'torque':None,'at':time.monotonic(),'error':str(e)}
-                self.motion.tick(self.rows)
-                if self.reader:
-                    s=self.reader.get_latest(); age=time.perf_counter()-s.timestamp_s
-                    if s.valid and 0<=age<.3:
-                        self.imu={'quat':list(s.quat),'gyro':list(s.gyro),'acc':list(s.acc),'at':time.monotonic()}
+                id_mode=self.id_setup.active
+                if id_mode:
+                    self.id_setup.tick()
+                else:
+                    for sid in IDS:
+                        try:
+                            b=self.bus.read(sid,56,15)
+                            p=int.from_bytes(b[:2],'little')
+                            if not 0<=p<=4095: raise IOError('位置超出单圈范围')
+                            torque=self.bus.read(sid,40,1)[0]
+                            if torque not in (0,1): raise IOError('力矩寄存器不是0/1')
+                            # HD1910 register 69/70: bit15 sign, 6.5mA per unit.
+                            raw=int.from_bytes(b[13:15],'little')
+                            current=-(raw&32767) if raw&32768 else raw
+                            self.rows[sid]={'count':p,'torque':bool(torque),'voltage':b[6]/10,
+                                            'temperature':b[7],'current_raw':current,'current_ma':current*6.5,
+                                            'at':time.monotonic(),'error':None}
+                        except Exception as e:
+                            self.rows[sid]={'count':None,'torque':None,'at':time.monotonic(),'error':str(e)}
+                    self.motion.tick(self.rows)
+                    if self.reader:
+                        s=self.reader.get_latest(); age=time.perf_counter()-s.timestamp_s
+                        if s.valid and 0<=age<.3:
+                            self.imu={'quat':list(s.quat),'gyro':list(s.gyro),'acc':list(s.acc),'at':time.monotonic()}
+                            self.history.append(copy.deepcopy(self.imu)); self.history=self.history[-160:]
+                        else: self.imu=None
+                    elif self.args.mock:
+                        self.imu={'quat':list(DEFAULT_MOUNT),'gyro':[0,0,0],'acc':[1,0,0],'at':time.monotonic()}
                         self.history.append(copy.deepcopy(self.imu)); self.history=self.history[-160:]
-                    else: self.imu=None
-                elif self.args.mock:
-                    self.imu={'quat':list(DEFAULT_MOUNT),'gyro':[0,0,0],'acc':[1,0,0],'at':time.monotonic()}
-                    self.history.append(copy.deepcopy(self.imu)); self.history=self.history[-160:]
+            if id_mode:
+                # Yield outside the serial lock so state and command requests can run.
+                self.stop.wait(.005)
+                continue
             elapsed=time.monotonic()-start
             self.hz=1/max(.06,elapsed); self.stop.wait(max(0,.06-elapsed))
 
@@ -139,7 +151,7 @@ class App:
                     'runtime_support':runtime_support(self.args.robotd),
                     'profile_path':self.args.profile,'home':dict(zip(NAMES,HOME)),
                     'reference_aligned':aligned,
-                    'motion':copy.deepcopy(self.motion.status)}
+                    'motion':copy.deepcopy(self.motion.status),'id_setup':self.id_setup.state()}
 
     def command(self,d):
         with self.lock:
@@ -148,6 +160,28 @@ class App:
             if op=='cancel_exit':
                 self.leaving=False; return {'message':'已取消页面切换'}
             if self.leaving: raise ValueError('正在退出标定，请等待页面切换完成')
+            if op=='id_enter':
+                if self.motion.job: raise ValueError('请先停止实物运动')
+                if self.profile!=self.saved: raise ValueError('请先保存或撤销标定草稿')
+                if getattr(self.bus,'original_speeds',{}): raise ValueError('仍有临时速度待恢复，请先在原舵机上完成断力和速度恢复，再分配 ID')
+                self.id_setup.active=True
+                return {'message':'已进入 ID 分配模式；暂停标定采样和运动，已编号舵机可保留连接，每次只新增一只待编号舵机'}
+            if op=='id_exit':
+                self.id_setup.require_idle()
+                for sid in self.id_setup.found:
+                    if self.bus.read_raw(sid,40,1)!=b'\0': raise ValueError('请先确认发现的舵机全部断力')
+                self.id_setup.active=False;self.rows={}
+                return {'message':'已返回姿态标定；新机器人请重新记录 HOME、方向、限位和 IMU'}
+            if op=='id_scan':
+                self.id_setup.scan();return {'message':'正在扫描 ID 0～253，不修改舵机参数'}
+            if op=='id_stop':
+                self.id_setup.scanning=False;return {'message':'已停止扫描，保留已发现的 ID'}
+            if op in ('id_select','id_relax'):
+                result=(self.id_setup.select if op=='id_select' else self.id_setup.relax)(d.get('id'))
+                return {'message':'ID %s 已%s'%(result['id'],'确认断力' if not result['torque'] else '读取，当前仍上力'),'servo':result}
+            if op=='id_change':
+                return self.id_setup.change(d.get('id'),d.get('new_id'),d.get('single_confirmed'))
+            if self.id_setup.active: raise ValueError('ID 分配模式下禁止运动和标定保存，请先返回姿态标定')
             if op=='capture_home_all':
                 if self.motion.job: raise ValueError('请先停止运动，再记录全部HOME')
                 if d.get('revision')!=self.revision: raise ValueError('标定已变化，请刷新后重试')
@@ -359,9 +393,13 @@ def main():
     p.add_argument('--bind',default='0.0.0.0'); p.add_argument('--baseline',default='/etc/robot/zero_pos.json')
     p.add_argument('--profile',default='/etc/robot/visual_calibration.json')
     p.add_argument('--runtime-marker',default='/etc/robot/visual-calibration-runtime-v1'); p.add_argument('--mock',action='store_true')
+    p.add_argument('--mock-servo-id',type=int,choices=range(254),help='single-servo offline preview (requires --mock)')
+    p.add_argument('--id-journal',default='/var/lib/easyduck/servo-id-changes.jsonl')
     p.add_argument('--robotd',default='/opt/robot/daemon/bin/robotd')
     p.add_argument('--dry-run-apply',action='store_true',help='print the apply/exit systemd command instead of running it')
-    args=p.parse_args(); app=App(args); server=ThreadingHTTPServer((args.bind,args.http_port),Handler); server.app=app
+    args=p.parse_args();
+    if args.mock_servo_id is not None and not args.mock:p.error('--mock-servo-id requires --mock')
+    app=App(args); server=ThreadingHTTPServer((args.bind,args.http_port),Handler); server.app=app
     def stop(*_): threading.Thread(target=server.shutdown,daemon=True).start()
     signal.signal(signal.SIGTERM,stop); signal.signal(signal.SIGINT,stop)
     print('calibration listening',args.http_port,'mock=',args.mock,flush=True)

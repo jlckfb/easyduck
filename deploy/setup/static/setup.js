@@ -178,6 +178,7 @@ function applyAccess(data) {
   const calibration = $('open-calibration');
   const calibrationTarget = new URL(controlTarget.href); calibrationTarget.searchParams.set('target','calibration');
   calibration.href = calibrationTarget.href; calibration.hidden = false;
+  const idTarget=new URL(calibrationTarget.href);idTarget.searchParams.set('target','servo_setup');$('open-servo-id').href=idTarget.href;$('open-servo-id').hidden=false;
   calibration.textContent = wirelessReady ? '通过 Wi-Fi 打开标定页 ↗' : '打开标定页 ↗';
   control.textContent = wirelessReady ? '通过 Wi-Fi 打开控制页 ↗' : '打开当前网络的控制页 ↗';
   const system = $('system-link'); system.hidden = !data.system_url; if (data.system_url) system.href = data.system_url;
@@ -218,7 +219,7 @@ document.addEventListener('submit', async event => {
   const body = Object.fromEntries(new FormData(form).entries());
   try {
     let result = await request(path, {method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':csrf}, body:JSON.stringify(body)});
-    if (path === '/api/login') { const query=new URL(location.href).searchParams; const target=query.get('target'); const source=query.get('source'); location.assign(['setup','control','calibration'].includes(target)?'/navigate?target='+target+'&source='+(['setup','control','calibration'].includes(source)?source:'setup'):'/'); return; }
+    if (path === '/api/login') { const query=new URL(location.href).searchParams; const target=query.get('target'); const source=query.get('source'); location.assign(['setup','control','calibration','servo_setup'].includes(target)?'/navigate?target='+target+'&source='+(['setup','control','calibration'].includes(source)?source:'setup'):'/'); return; }
     if (path === '/api/logout') { location.assign('/login'); return; }
     if (result.job) {
       const deadline = Date.now() + 95000;
