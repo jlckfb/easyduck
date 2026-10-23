@@ -115,6 +115,7 @@ enum Sit {
 
 pub struct Controller {
     xgo: crate::xgo::Flow,
+    head_ground: crate::xgo::HeadGroundDetector,
     xgo_command: (Command, f64),
     xgo_revision: Option<u64>,
     policy: Policy,
@@ -144,6 +145,7 @@ impl Controller {
     pub fn new(policy: Policy, tuning: Tuning, skills: SkillTuning) -> Self {
         Self {
             xgo: crate::xgo::Flow::default(),
+            head_ground: Default::default(),
             xgo_command: (Command::default(), 0.0),
             xgo_revision: None,
             policy,
@@ -174,7 +176,7 @@ impl Controller {
     }
 
     pub fn reset_xgo(&mut self) {
-        self.xgo.reset(); self.reset();
+        self.xgo.reset(); self.head_ground.reset(); self.reset();
         self.xgo_command = (Command::default(),0.0);
         self.xgo_revision = None;
     }
@@ -186,7 +188,9 @@ impl Controller {
         }
     }
 
-    pub fn invalidate_xgo(&mut self) { self.xgo.invalidate(); }
+    pub fn invalidate_xgo(&mut self) { self.xgo.invalidate(); self.head_ground.reset(); }
+
+    pub fn xgo_recovering(&self) -> bool { self.xgo.phase != crate::xgo::Phase::Walk }
 
     pub fn start_xgo_pick(&mut self) -> Result<(), &'static str> {
         if !self.policy.has_ground_pick() { return Err("no ground-pick policy loaded"); }
@@ -202,9 +206,11 @@ impl Controller {
     pub fn step_xgo(&mut self, sensors: &duck_control::Sensors,
                     now: f64) -> Result<(Step, f64), PolicyError> {
         let (command,mouth)=self.xgo_command;
+        let eligible = self.xgo.pick_phi.is_none() && !self.xgo.rolling();
+        let contact = self.head_ground.update(sensors.imu.gravity, &sensors.positions,
+            &sensors.velocities, sensors.imu.gyro, self.previous.as_ref(), now, eligible);
         let frame = self.xgo.frame_with_head(sensors.imu.gravity, now, true,
-                                  command.twist, command.head, mouth,
-                                  crate::xgo::head_ground_posture(&sensors.positions))
+                                  command.twist, command.head, mouth, contact)
             .ok_or_else(|| PolicyError::Inference("invalid xgoduck gravity".to_owned()))?;
         if frame.reset || frame.zero_action { self.reset(); }
         let net = match frame.network {

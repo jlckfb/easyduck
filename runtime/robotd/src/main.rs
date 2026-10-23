@@ -1218,7 +1218,6 @@ async fn control_loop<T: RobotIo>(
         / LEG_JOINTS.len() as f64;
     let mut seated_boot = !xgo_profile && leg_deviation > SEATED_BOOT_RAD;
     let mut xgo_last_feedback = Instant::now();
-    let mut head_ground_elapsed=0.0f64;
     let mut xgo_last_sensors = None;
     if seated_boot {
         tracing::warn!(
@@ -1382,11 +1381,7 @@ async fn control_loop<T: RobotIo>(
         duck_control::io_trace::feedback_status(fresh.is_some());
         if let Some(s)=fresh.as_ref() {
             duck_control::io_trace::sensors(s);
-            if xgo_profile && !controller.as_ref().is_some_and(|c|c.busy())
-                && crate::xgo::head_ground_condition(s.imu.gravity,&s.positions) {
-                head_ground_elapsed+=period.as_secs_f64();
-            } else {head_ground_elapsed=0.0;}
-        } else {head_ground_elapsed=0.0;}
+        }
 
         let coasted = coast.sample(fresh);
         if fresh.is_some() { xgo_last_feedback = tick_start; xgo_last_sensors=fresh; }
@@ -1403,7 +1398,7 @@ async fn control_loop<T: RobotIo>(
             if safety.imu_ready() {
             }
         }
-        state.fallen.store(safety.fallen() || head_ground_elapsed>=0.15, Ordering::Relaxed);
+        state.fallen.store(safety.fallen() || (xgo_profile && intents.enabled() && controller.as_ref().is_some_and(|c|c.xgo_recovering())), Ordering::Relaxed);
 
         if xgo_profile {
             let mut manager=intents.control.lock().expect("control lock");
@@ -2288,7 +2283,7 @@ async fn control_loop<T: RobotIo>(
                 head: command.head,
                 policy: policy_label.to_owned(),
                 safety: proto::SafetyState {
-                    fallen: safety.fallen() || head_ground_elapsed>=0.15,
+                    fallen: safety.fallen() || (xgo_profile && snapshot.enabled && controller.as_ref().is_some_and(|c|c.xgo_recovering())),
                     // Limp means "the robot is actually at limp gain" — which now happens
                     // in exactly one place, the limp-fall sequence riding a fall down. A
                     // bare fall verdict is a report, not a state.
