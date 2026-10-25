@@ -444,6 +444,8 @@ pub struct PolicyParams {
     /// Commanded sit↔stand (posture flag in the twist `vx` slot). Sit toggle, shutdown sit
     /// and the seated-boot rise all need it.
     pub sitstand: Option<PathBuf>,
+    /// Optional commanded sit/stand for xgoduck; sitstand remains recovery.
+    pub posture: Option<PathBuf>,
     /// Phase-scripted ground pick. In roller mode this slot holds the crouch.
     pub ground_pick: Option<PathBuf>,
     pub kick_left: Option<PathBuf>,
@@ -516,6 +518,8 @@ pub struct ResolvedPolicy {
     pub walk: PathBuf,
     pub stand: Option<PathBuf>,
     pub sitstand: Option<PathBuf>,
+    /// Optional commanded sit/stand for xgoduck; sitstand remains recovery.
+    pub posture: Option<PathBuf>,
     pub ground_pick: Option<PathBuf>,
     pub kick_left: Option<PathBuf>,
     pub kick_right: Option<PathBuf>,
@@ -588,6 +592,7 @@ impl PolicyParams {
             walk: path(&self.walk, Some(walk_default)).expect("walk always has a default"),
             stand: path(&self.stand, stand),
             sitstand: path(&self.sitstand, sitstand),
+            posture: path(&self.posture, None),
             ground_pick: path(&self.ground_pick, ground_pick),
             kick_left: path(&self.kick_left, kick.then_some("ball_kick_left.onnx")),
             kick_right: path(&self.kick_right, kick.then_some("ball_kick_right.onnx")),
@@ -765,6 +770,7 @@ impl Default for PolicyParams {
             walk: None,
             stand: None,
             sitstand: None,
+            posture: None,
             ground_pick: None,
             kick_left: None,
             kick_right: None,
@@ -1529,5 +1535,16 @@ mod tests {
             let path = write(dir.path(), &format!("[control]\nhz = {hz}\n"));
             assert!(Params::load(&path, true).is_err(), "hz = {hz} was accepted");
         }
+    }
+}
+
+#[cfg(test)]
+mod commanded_posture_slot_tests {
+    use super::*;
+    #[test]
+    fn posture_does_not_replace_recovery() {
+        let p: PolicyParams=toml::from_str("sitstand='getup.onnx'\nposture='posture.onnx'\n").unwrap();
+        let r=p.resolved();assert_eq!(r.sitstand,Some("getup.onnx".into()));assert_eq!(r.posture,Some("posture.onnx".into()));
+        assert!(PolicyParams::default().resolved().posture.is_none());
     }
 }

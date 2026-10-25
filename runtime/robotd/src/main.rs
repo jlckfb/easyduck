@@ -292,6 +292,7 @@ struct PolicyNames {
     walk: Option<String>,
     stand: Option<String>,
     sitstand: Option<String>,
+    posture: Option<String>,
     ground_pick: Option<String>,
     kick_left: Option<String>,
     kick_right: Option<String>,
@@ -309,6 +310,7 @@ impl PolicyNames {
             walk: file_name(&policy.walk),
             stand: name(&policy.stand),
             sitstand: name(&policy.sitstand),
+            posture: name(&policy.posture),
             ground_pick: name(&policy.ground_pick),
             kick_left: name(&policy.kick_left),
             kick_right: name(&policy.kick_right),
@@ -1120,6 +1122,7 @@ fn build_controller(
             walk: policy_cfg.walk.clone(),
             stand: policy_cfg.stand.clone(),
             sitstand: policy_cfg.sitstand.clone(),
+            posture: policy_cfg.posture.clone(),
             ground_pick: policy_cfg.ground_pick.clone(),
             kick_left: policy_cfg.kick_left.clone(),
             kick_right: policy_cfg.kick_right.clone(),
@@ -1551,8 +1554,8 @@ async fn control_loop<T: RobotIo>(
                     if requests.kick_right && !xgo_profile {
                         outcome("kick_right", controller.start_kick(false));
                     }
-                    if requests.sit_toggle && !xgo_profile {
-                        match controller.sit_toggle() {
+                    if requests.sit_toggle {
+                        match if xgo_profile { controller.toggle_xgo_posture() } else { controller.sit_toggle() } {
                             Ok(direction) => tracing::warn!(direction, "sit toggle"),
                             Err(reason) => tracing::warn!(reason, "sit toggle refused"),
                         }
@@ -2900,7 +2903,7 @@ fn dispatch(
                 proto::Skill::GroundPick => policies.ground_pick.is_some(),
                 proto::Skill::KickLeft => policies.kick_left.is_some(),
                 proto::Skill::KickRight => policies.kick_right.is_some(),
-                proto::Skill::SitToggle => policies.sitstand.is_some(),
+                proto::Skill::SitToggle => if std::env::var("ROBOTD_CONTROL_PROFILE").as_deref()==Ok("xgoduck") { policies.posture.is_some() } else { policies.sitstand.is_some() },
                 proto::Skill::Roulade => policies.roulade.is_some(),
             };
             // Not refused for being down. A skill on a fallen robot is the human's call,
@@ -3043,6 +3046,7 @@ fn dispatch(
                     walk: policies.walk.clone(),
                     stand: policies.stand.clone(),
                     sitstand: policies.sitstand.clone(),
+                    posture: policies.posture.clone(),
                     ground_pick: policies.ground_pick.clone(),
                     kick_left: policies.kick_left.clone(),
                     kick_right: policies.kick_right.clone(),

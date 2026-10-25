@@ -171,6 +171,8 @@ pub enum Net {
     Stand,
     /// Commanded sit↔stand: the twist `vx` slot carries a posture flag, 1 = sit, 0 = stand.
     SitStand,
+    /// Independent commanded posture network; xgoduck recovery keeps SitStand.
+    Posture,
     /// Phase-scripted ground pick; the twist slots carry `[cos φ, sin φ, 0]`.
     GroundPick,
     KickLeft,
@@ -187,6 +189,7 @@ pub struct PolicyPaths {
     pub walk: PathBuf,
     pub stand: Option<PathBuf>,
     pub sitstand: Option<PathBuf>,
+    pub posture: Option<PathBuf>,
     pub ground_pick: Option<PathBuf>,
     pub kick_left: Option<PathBuf>,
     pub kick_right: Option<PathBuf>,
@@ -202,6 +205,7 @@ pub struct Policy {
     walk: Session,
     stand: Option<Session>,
     sitstand: Option<Session>,
+    posture: Option<Session>,
     ground_pick: Option<Session>,
     kick_left: Option<Session>,
     kick_right: Option<Session>,
@@ -245,6 +249,7 @@ impl Policy {
                 walk: open_warm(&paths.walk, &zero)?,
                 stand: open_opt(&paths.stand, &zero)?,
                 sitstand: open_opt(&paths.sitstand, &zero)?,
+                posture: open_opt(&paths.posture, &zero)?,
                 ground_pick: open_opt(&paths.ground_pick, &zero)?,
                 kick_left: open_opt(&paths.kick_left, &zero)?,
                 kick_right: open_opt(&paths.kick_right, &zero)?,
@@ -279,6 +284,8 @@ impl Policy {
         self.sitstand.is_some()
     }
 
+    pub fn has_posture(&self) -> bool { self.posture.is_some() }
+
     pub fn has_ground_pick(&self) -> bool {
         self.ground_pick.is_some()
     }
@@ -307,6 +314,7 @@ impl Policy {
             Net::Walk => None,
             Net::Stand => self.stand.as_mut(),
             Net::SitStand => self.sitstand.as_mut(),
+            Net::Posture => self.posture.as_mut(),
             Net::GroundPick => self.ground_pick.as_mut(),
             Net::KickLeft => self.kick_left.as_mut(),
             Net::KickRight => self.kick_right.as_mut(),

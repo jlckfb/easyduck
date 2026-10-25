@@ -8,7 +8,8 @@
 | 标定 IMU Python 模块 | Copyright 2026 Marc Duclusaud，见 calibration/imu/lsm6dsv16x_reader.py | GPL-3.0-or-later，见 LICENSES/GPL-3.0-or-later.txt |
 | three.js 160、OrbitControls、STLLoader | calibration/static/vendor/ | MIT，原文见 calibration/static/vendor/LICENSE-three.txt |
 | 标定显示网格 | xgoduck_rl 的 xgoduck 网格；文件信息见 calibration/static/model/sources.json | 所附来源清单未提供明确再分发许可，不按 Apache-2.0 授权 |
-| 动作模型及引用控制流程 | [LuwuDynamics/xgoduck_runtime_arduino](https://github.com/LuwuDynamics/xgoduck_runtime_arduino/tree/8cdbbd84710d856581982c9eaf0d5e2970666232) | 固定版本未附明确许可；模型来源和哈希见 models/manifest.json，不按 Apache-2.0 授权 |
+| 四个上游动作模型及引用控制流程 | [LuwuDynamics/xgoduck_runtime_arduino](https://github.com/LuwuDynamics/xgoduck_runtime_arduino/tree/8cdbbd84710d856581982c9eaf0d5e2970666232) | 固定版本未附明确许可；模型来源和哈希见 models/manifest.json，不按 Apache-2.0 授权 |
+| 自训坐下／起立模型 | `models/xgoduck_posture_14999_tspi.onnx`，训练源码 LuwuDynamics/xgoduck_rl 固定版本 `afd091be041caf5e6d4f44102c959e7571b82a37` | 本仓库 Apache-2.0；来源及检查点哈希见 models/manifest.json |
 | 网页与标定台自定义代码 | web/、calibration/ | 未附独立完整许可声明，授权归属需确认，不据根 LICENSE 推定第三方授权 |
 | 内置曲谱 | `runtime/sounds/scores/wistful.duckscore`、`duck_strut.mid` | 随上游 Rust 音效模块提供；`wistful` 文件注明为原创。Rust 包声明 Apache-2.0，曲谱未附单独许可声明 |
 | 终端显示网格与头部几何 | `runtime/robotctl/assets/duck.bin`、`runtime/kinematics/assets/alpha/robot_walk.xml` | 随 Rust 模块提供；文件未附单独素材许可声明，不能仅按 Rust 包许可推定素材授权 |

@@ -5,7 +5,7 @@
 pub enum Phase { Walk, DefaultPose, Getup }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum Network { Walk, Getup, Pick, Roulade }
+pub enum Network { Walk, Getup, Pick, Roulade, Posture }
 
 #[derive(Debug, Clone, Copy)]
 pub struct Frame {
@@ -27,6 +27,7 @@ pub struct Flow {
     pub hold_elapsed: f64,
     phase_since: Option<f64>,
     pub pick_phi: Option<f64>,
+    pub posture_sit: Option<bool>,
     roulade_until: Option<f64>,
     reset_policy: bool,
     mouth: Option<f64>,
@@ -36,7 +37,7 @@ impl Default for Flow {
     fn default() -> Self {
         Self { phase: Phase::Walk, fall_elapsed: 0.0, stand_elapsed: 0.0,
             hold_elapsed: 0.0, phase_since: None, pick_phi: None, roulade_until: None,
-            reset_policy: true, mouth: None }
+            reset_policy: true, mouth: None, posture_sit: None }
     }
 }
 
@@ -106,7 +107,18 @@ impl Flow {
         }
     }
 
+    pub fn toggle_posture(&mut self) -> Result<&'static str, &'static str> {
+        if self.phase != Phase::Walk || self.pick_phi.is_some() || self.rolling() {
+            return Err("sit/stand unavailable during recovery, pick or roulade");
+        }
+        if self.posture_sit.is_none() { self.reset_policy = true; }
+        let sit = !self.posture_sit.unwrap_or(false);
+        self.posture_sit = Some(sit);
+        Ok(if sit { "sit" } else { "stand" })
+    }
+
     pub fn start_pick(&mut self) -> Result<(), &'static str> {
+        if self.posture_sit.is_some() { return Err("return to walking before pick"); }
         if self.phase != Phase::Walk { return Err("pick only while walking upright"); }
         if self.roulade_until.is_some() { return Err("pick unavailable during roulade"); }
         self.pick_phi = Some(0.0);
@@ -120,6 +132,7 @@ impl Flow {
     /// The controller sends a held gamepad button repeatedly. Keep the official 1.9 s
     /// window alive while held, but reset policy history only on the first press.
     pub fn start_roulade(&mut self, now: f64) -> Result<bool, &'static str> {
+        if self.posture_sit.is_some() { return Err("return to walking before roulade"); }
         if self.phase != Phase::Walk || self.pick_phi.is_some() {
             return Err("roulade only while walking");
         }
@@ -180,7 +193,13 @@ impl Flow {
         } }
         if self.phase != before {
             self.reset_policy = true;
-            if self.phase != Phase::Walk { self.pick_phi = None; self.roulade_until = None; }
+            if self.phase != Phase::Walk { self.pick_phi = None; self.roulade_until = None; self.posture_sit = None; }
+        }
+        // Movement after a commanded STAND hands control back to walking.
+        // SIT keeps holding; toggle to STAND before requesting movement.
+        if self.posture_sit == Some(false) && twist.iter().any(|v| *v != 0.0) {
+            self.posture_sit = None;
+            self.reset_policy = true;
         }
         let rolling = self.roulade_until.is_some() && self.phase == Phase::Walk;
         let picking = self.pick_phi.is_some() && self.phase == Phase::Walk;
@@ -194,6 +213,8 @@ impl Flow {
             (Network::Getup, [0.0;3], [0.0;4])
         } else if self.phase == Phase::DefaultPose {
             (Network::Getup, twist, head)
+        } else if let Some(sit) = self.posture_sit {
+            (Network::Posture, [if sit {1.0} else {0.0},0.0,0.0], head)
         } else { (Network::Walk, twist, head) };
         // Controller.command ignores mouth updates only while a pick is active.
         if !picking { self.mouth = Some(mouth); }
@@ -441,5 +462,36 @@ mod head_obstruction_tests {
                 assert_eq!(f.phase,Phase::Walk);f.inferred(&frame);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod commanded_posture_tests {
+    use super::*;
+    const UP: [f64;3] = [0.0,0.0,-1.0];
+    #[test]
+    fn separate_posture_toggle_uses_flag_and_keeps_history_on_reverse() {
+        let mut f=Flow::default();
+        assert_eq!(f.toggle_posture(),Ok("sit"));
+        let sit=f.frame(UP,0.0,true,[0.0,0.55,0.0],[0.0;4],0.0).unwrap();
+        assert_eq!(sit.network,Network::Posture);assert_eq!(sit.twist,[1.0,0.0,0.0]);
+        f.inferred(&sit);
+        assert_eq!(f.toggle_posture(),Ok("stand"));
+        let stand=f.frame(UP,0.02,true,[0.0;3],[0.0;4],0.0).unwrap();
+        assert_eq!(stand.network,Network::Posture);assert_eq!(stand.twist,[0.0;3]);assert!(!stand.reset);
+        let walk=f.frame(UP,0.04,true,[0.0,0.55,0.0],[0.0;4],0.0).unwrap();
+        assert_eq!(walk.network,Network::Walk);assert!(walk.reset);assert_eq!(f.posture_sit,None);
+    }
+    #[test]
+    fn sitting_ignores_walking_request_and_recovery_preempts_posture() {
+        let mut f=Flow::default();f.toggle_posture().unwrap();
+        assert!(f.start_pick().is_err());assert!(f.start_roulade(0.0).is_err());
+        let down=[1.0,0.0,0.0];
+        for i in 0..8 { f.frame(down,i as f64*0.02,true,[0.0,0.55,0.0],[0.0;4],0.0).unwrap(); }
+        assert_eq!(f.phase,Phase::DefaultPose);assert_eq!(f.posture_sit,None);
+        assert!(f.toggle_posture().is_err());
+        let recovery=f.frame(down,1.2,true,[0.0;3],[0.0;4],0.0).unwrap();
+        assert_eq!(recovery.network,Network::Getup);
+        f.reset();assert_eq!(f.posture_sit,None);
     }
 }

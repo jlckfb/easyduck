@@ -192,6 +192,11 @@ impl Controller {
 
     pub fn xgo_recovering(&self) -> bool { self.xgo.phase != crate::xgo::Phase::Walk }
 
+    pub fn toggle_xgo_posture(&mut self) -> Result<&'static str, &'static str> {
+        if !self.policy.has_posture() { return Err("no commanded sit/stand policy loaded"); }
+        self.xgo.toggle_posture()
+    }
+
     pub fn start_xgo_pick(&mut self) -> Result<(), &'static str> {
         if !self.policy.has_ground_pick() { return Err("no ground-pick policy loaded"); }
         self.xgo.start_pick()
@@ -206,7 +211,7 @@ impl Controller {
     pub fn step_xgo(&mut self, sensors: &duck_control::Sensors,
                     now: f64) -> Result<(Step, f64), PolicyError> {
         let (command,mouth)=self.xgo_command;
-        let eligible = self.xgo.pick_phi.is_none() && !self.xgo.rolling();
+        let eligible = self.xgo.pick_phi.is_none() && !self.xgo.rolling() && self.xgo.posture_sit.is_none();
         let contact = self.head_ground.update(sensors.imu.gravity, &sensors.positions,
             &sensors.velocities, sensors.imu.gyro, self.previous.as_ref(), now, eligible);
         let frame = self.xgo.frame_with_head(sensors.imu.gravity, now, true,
@@ -218,6 +223,7 @@ impl Controller {
             crate::xgo::Network::Getup => Net::SitStand,
             crate::xgo::Network::Pick => Net::GroundPick,
             crate::xgo::Network::Roulade => Net::Roulade,
+            crate::xgo::Network::Posture => Net::Posture,
         };
         let effective = Command { twist: frame.twist, head: frame.head, ..Command::default() };
         let mut trace_observation=None;
@@ -237,7 +243,7 @@ impl Controller {
         smooth_targets(&mut targets, self.previous, &tuning);
         self.previous = Some(targets);
         duck_control::io_trace::inference(trace_observation.as_ref().map(|o|o.as_slice()),
-            &action,sensors,&targets,match net {Net::Walk=>"walk",Net::SitStand=>"sitstand",Net::GroundPick=>"ground_pick",Net::Roulade=>"roulade",_=>"other"},frame.reset || frame.zero_action);
+            &action,sensors,&targets,match net {Net::Walk=>"walk",Net::SitStand=>"sitstand",Net::GroundPick=>"ground_pick",Net::Roulade=>"roulade",Net::Posture=>"posture",_=>"other"},frame.reset || frame.zero_action);
         if !frame.zero_action { self.xgo.inferred(&frame); }
         if frame.picking { self.xgo_command.1=frame.mouth; }
         let label = match self.xgo.phase {
@@ -245,6 +251,8 @@ impl Controller {
             crate::xgo::Phase::Getup => "xgo_getup",
             _ if frame.rolling => "xgo_roulade",
             _ if frame.picking => "xgo_pick",
+            _ if self.xgo.posture_sit == Some(true) => "xgo_sit",
+            _ if self.xgo.posture_sit == Some(false) => "xgo_rise",
             _ => "xgo_walk",
         };
         Ok((Step { targets, label, gain: self.tuning.gain,

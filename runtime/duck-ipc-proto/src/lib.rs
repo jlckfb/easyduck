@@ -1531,6 +1531,8 @@ pub struct SubscribeResult {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sitstand: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub posture: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub ground_pick: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub kick_left: Option<String>,

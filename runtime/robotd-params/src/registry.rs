@@ -129,6 +129,7 @@ pub const REGISTRY: &[Entry] = &[
         Kind::OptionalPath,
         "Sit/stand policy; sit toggle and shutdown sit need it",
     ),
+    entry("policy.posture", Kind::OptionalPath, "Commanded sit/stand for xgoduck; separate from recovery"),
     entry(
         "policy.ground_pick",
         Kind::OptionalPath,

@@ -1,6 +1,6 @@
 # 动作模型
 
-本目录提供泰山派 1M＋HD1910 主控使用的四个 ONNX 模型。模型已包含输入输出方向适配；学习权重与 `manifest.json` 所列上游原始模型相同。
+本目录提供泰山派 1M＋HD1910 主控使用的五个 ONNX 模型。模型已包含输入输出方向适配。其中四个模型保留上游原始模型的学习权重，坐下／起立模型为自训模型；具体来源见 `manifest.json`。
 
 ## 模型与配置
 
@@ -8,6 +8,7 @@
 | --- | --- | --- |
 | `xgoduck_walk_original_signs_20261009.onnx` | `policy.walk`、`policy.stand` | 行走与零速站立，共用一个模型 |
 | `xgoduck_getup_official_tspi_20261013.onnx` | `policy.sitstand` | 起身网络 |
+| `xgoduck_posture_14999_tspi.onnx` | `policy.posture` | 手柄指令坐下／起立，独立于倒地恢复 |
 | `xgoduck_pick_official_tspi_20261013.onnx` | `policy.ground_pick` | 捡物动作网络 |
 | `xgoduck_roulade_official_tspi_20261013.onnx` | `policy.roulade` | 翻滚动作网络 |
 
@@ -53,3 +54,9 @@ sha256sum -c SHA256SUMS
 原始模型来自 [LuwuDynamics/xgoduck_runtime_arduino 的固定版本](https://github.com/LuwuDynamics/xgoduck_runtime_arduino/tree/8cdbbd84710d856581982c9eaf0d5e2970666232)。逐个文件的下载地址和原始哈希见 `manifest.json`。
 
 该固定版本未附明确的许可证文件；这些模型不因本仓库根目录的许可证而自动获得相同授权。
+
+## 自训坐起模型
+
+`xgoduck_posture_14999_tspi.onnx` 来自官方 `Mjlab-SitStand-Flat-XgoDuck` 任务的最终检查点 `model_14999.pt`。训练源码固定为 `afd091be041caf5e6d4f44102c959e7571b82a37`，使用官方物理与奖励配置，并行环境数为2048。检查点、原始导出及部署模型的哈希见 manifest。
+
+该模型通过移动指令块的第一项接收姿态标志：1为坐下，0为起立；其余移动项为零。这是专用动作阶段的编码，不是行走速度。输入归一化在模型内，方向适配与主控契约一致。此模型适用本仓库 Apache-2.0；上面所述另四个模型仍保留各自来源与授权状态。
