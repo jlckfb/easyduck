@@ -37,7 +37,9 @@ pub struct XgoCommand {
 
 impl XgoCommand {
     pub fn valid(&self)->bool {
-        self.twist.iter().zip([0.4,0.3,1.0]).all(|(v,l)|v.is_finite()&&v.abs()<=l)
+        self.twist.iter().all(|v|v.is_finite())
+        && self.twist[0].abs()<=0.4 && (-0.3..=0.55).contains(&self.twist[1])
+        && self.twist[2].abs()<=1.0
         && self.head.iter().all(|v|v.is_finite()&&v.abs()<=1.0)
         && self.mouth.is_finite()&&(0.0..=1.0).contains(&self.mouth)
     }
@@ -663,5 +665,17 @@ mod tests {
         let intents = Intents::new();
         intents.set_twist([1.0, 0.0, 0.0]);
         assert_eq!(intents.snapshot().command.body, BodyPose::default());
+    }
+}
+
+#[cfg(test)]
+mod asymmetric_lateral_tests {
+    use super::*;
+    #[test]
+    fn left_bound_055_right_bound_030() {
+        for (y,ok) in [(0.55,true),(0.550001,false),(-0.3,true),(-0.300001,false),(f64::NAN,false),(f64::INFINITY,false)] {
+            assert_eq!(XgoCommand{twist:[0.0,y,0.0],..Default::default()}.valid(),ok);
+        }
+        assert!(!XgoCommand{twist:[0.40001,0.0,0.0],..Default::default()}.valid());
     }
 }

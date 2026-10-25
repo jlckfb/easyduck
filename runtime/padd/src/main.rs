@@ -57,13 +57,21 @@ struct Args {
     #[arg(long, default_value_t = 0.1)]
     deadzone: f64,
 
-    /// Full-deflection forward/strafe speed, m/s. The prototype's alpha default.
-    #[arg(long, default_value_t = 0.3)]
+    /// Sustained full-deflection forward speed, m/s.
+    #[arg(long, default_value_t = 0.15)]
     max_linear: f64,
 
-    /// Full-deflection backward speed, m/s — the prototype caps reverse separately.
-    #[arg(long, default_value_t = 0.3)]
+    /// Sustained full-deflection backward speed, m/s.
+    #[arg(long, default_value_t = 0.25)]
     max_linear_backward: f64,
+
+    /// Full-deflection sideways speed, m/s.
+    #[arg(long, default_value_t = 0.3)]
+    max_lateral: f64,
+
+    /// Full-deflection leftward speed, m/s. Rightward uses max_lateral.
+    #[arg(long, default_value_t = 0.55)]
+    max_lateral_left: f64,
 
     /// Full-deflection turn rate, rad/s.
     #[arg(long, default_value_t = 1.5)]
@@ -121,6 +129,56 @@ enum Mode {
     Drive,
     Head,
     BodyPose,
+}
+
+/// A single 100 ms starting pulse when the walking stick reaches its end.
+/// Two thresholds keep end-stop jitter from repeatedly restarting the pulse.
+#[derive(Default)]
+struct WalkingSpeed {
+    direction: i8,
+    pulse_started: Option<Instant>,
+}
+
+impl WalkingSpeed {
+    fn reset(&mut self) { *self = Self::default(); }
+
+    fn sample(&mut self, axis: f64, now: Instant, forward: f64, backward: f64) -> f64 {
+        const ENTER: f64 = 0.95;
+        const RELEASE: f64 = 0.90;
+        const PULSE: Duration = Duration::from_millis(100);
+        if !axis.is_finite() { self.reset(); return 0.0; }
+        let axis = axis.clamp(-1.0, 1.0);
+        let direction = if axis > 0.0 { 1 } else if axis < 0.0 { -1 } else { 0 };
+        if direction != self.direction || axis.abs() <= RELEASE {
+            self.reset();
+            self.direction = direction;
+        }
+        if axis.abs() >= ENTER && self.pulse_started.is_none() {
+            self.pulse_started = Some(now);
+        }
+        let pulsing = self.pulse_started.is_some_and(|start| now.duration_since(start) < PULSE);
+        let steady = if direction >= 0 { forward } else { backward };
+        // Default forward 0.15 -> 0.25; backward 0.25 -> 0.30 m/s.
+        // Scaling with the configured limits also preserves an explicitly zero limit.
+        let factor = if pulsing { if direction > 0 { 5.0 / 3.0 } else { 1.2 } } else { 1.0 };
+        axis * steady * factor
+    }
+}
+
+fn lateral_speed(axis: f64, left: f64, right: f64) -> f64 {
+    if axis < 0.0 { -axis * left } else { -axis * right }
+}
+
+#[cfg(test)]
+mod lateral_speed_tests {
+    use super::*;
+    #[test]
+    fn left_full_stick_is_055_right_stays_030() {
+        assert_eq!(lateral_speed(-1.0,0.55,0.30),0.55);
+        assert_eq!(lateral_speed(1.0,0.55,0.30),-0.30);
+        assert_eq!(lateral_speed(-0.5,0.55,0.30),0.275);
+        assert_eq!(lateral_speed(0.0,0.55,0.30),0.0);
+    }
 }
 
 fn main() -> std::process::ExitCode {
@@ -193,6 +251,7 @@ fn main() -> std::process::ExitCode {
     let mut mode = Mode::Drive;
     // Whether a pad was there last tick, so appearing and disappearing are each logged once.
     let mut driving = false;
+    let mut walking_speed = WalkingSpeed::default();
     let mut select_held_since: Option<Instant> = None;
     let mut dpad_up_held_since: Option<Instant> = None;
     let mut mode_switch_sent = false;
@@ -238,6 +297,7 @@ fn main() -> std::process::ExitCode {
         }
 
         let Some((_, pad)) = gilrs.gamepads().next() else {
+            walking_speed.reset();
             // No pad. Send nothing: `robotd`'s deadman stops the robot on its own, which is
             // exactly the wanted behaviour, and inventing a zero command here would mask a
             // disconnected pad as a deliberate stop.
@@ -286,6 +346,7 @@ fn main() -> std::process::ExitCode {
             }
         }
         if emergency_relax {
+            walking_speed.reset();
             if let Err(e)=notify(&mut stream,&proto::Call::RobotRelax) {
                 tracing::error!(error=%e,"torque-off request failed");return std::process::ExitCode::FAILURE;
             }
@@ -319,6 +380,7 @@ fn main() -> std::process::ExitCode {
         }
 
         if toggle_enable {
+            walking_speed.reset();
             // The robot owns the toggle. A local on/off belief here drifts from the
             // robot's the moment anything else moves it — robot.relax, the shutdown
             // sequence, either side restarting — and a stale belief turns Start into a
@@ -497,6 +559,8 @@ fn main() -> std::process::ExitCode {
             }
         }
 
+        if mode != Mode::Drive || roller { walking_speed.reset(); }
+
         let call = match mode {
             Mode::Drive if roller => proto::Call::RobotMove(proto::MoveParams {
                 // The prototype's roller shaping: push harder than you can brake, no
@@ -511,15 +575,10 @@ fn main() -> std::process::ExitCode {
                 vyaw: -right_x * ROLLER_YAW,
             }),
             Mode::Drive => proto::Call::RobotMove(proto::MoveParams {
-                vx: left_y
-                    * if left_y >= 0.0 {
-                        args.max_linear
-                    } else {
-                        args.max_linear_backward
-                    },
+                vx: walking_speed.sample(left_y, tick, args.max_linear, args.max_linear_backward),
                 // `vy` is positive to the left; stick-left reads negative on every pad
                 // gilrs normalises.
-                vy: -left_x * args.max_linear,
+                vy: lateral_speed(left_x, args.max_lateral_left, args.max_lateral),
                 vyaw: -right_x * args.max_angular,
             }),
             Mode::Head => {
@@ -628,5 +687,60 @@ fn request(
             tracing::warn!(error = %e, raw = %answer.trim(), "unparsable answer");
             Ok(None)
         }
+    }
+}
+
+#[cfg(test)]
+mod walking_speed_tests {
+    use super::*;
+    fn speed(p: &mut WalkingSpeed, axis: f64, t: Instant, ms: u64) -> f64 {
+        p.sample(axis, t + Duration::from_millis(ms), 0.15, 0.25)
+    }
+    fn near(a: f64, b: f64) { assert!((a-b).abs()<1e-12, "{a} != {b}"); }
+    #[test]
+    fn full_forward_pulses_once_for_100ms() {
+        let t=Instant::now(); let mut p=WalkingSpeed::default();
+        near(speed(&mut p,1.0,t,0),0.25);
+        near(speed(&mut p,1.0,t,99),0.25);
+        near(speed(&mut p,1.0,t,100),0.15);
+        near(speed(&mut p,1.0,t,1000),0.15);
+    }
+    #[test]
+    fn full_backward_uses_negative_velocities() {
+        let t=Instant::now(); let mut p=WalkingSpeed::default();
+        near(speed(&mut p,-1.0,t,0),-0.3);
+        near(speed(&mut p,-1.0,t,99),-0.3);
+        near(speed(&mut p,-1.0,t,100),-0.25);
+    }
+    #[test]
+    fn partial_stick_is_proportional_and_full_stick_starts_timer() {
+        let t=Instant::now(); let mut p=WalkingSpeed::default();
+        near(speed(&mut p,0.5,t,0),0.075);
+        near(speed(&mut p,1.0,t,500),0.25);
+        near(speed(&mut p,1.0,t,600),0.15);
+    }
+    #[test]
+    fn release_or_reversal_rearms_and_neutral_stops_immediately() {
+        let t=Instant::now(); let mut p=WalkingSpeed::default();
+        near(speed(&mut p,1.0,t,0),0.25);
+        near(speed(&mut p,0.0,t,20),0.0);
+        near(speed(&mut p,1.0,t,40),0.25);
+        near(speed(&mut p,-1.0,t,60),-0.3);
+    }
+    #[test]
+    fn end_stop_noise_does_not_repeat_pulse() {
+        let t=Instant::now(); let mut p=WalkingSpeed::default();
+        near(speed(&mut p,1.0,t,0),0.25);
+        near(speed(&mut p,0.94,t,110),0.94*0.15);
+        near(speed(&mut p,0.99,t,120),0.99*0.15);
+        near(speed(&mut p,0.90,t,130),0.90*0.15);
+        near(speed(&mut p,1.0,t,140),0.25);
+    }
+    #[test]
+    fn reset_clears_pulse_and_zero_limits_remain_zero() {
+        let t=Instant::now(); let mut p=WalkingSpeed::default();
+        near(speed(&mut p,1.0,t,0),0.25); p.reset();
+        near(speed(&mut p,1.0,t,1000),0.25);
+        near(p.sample(1.0,t+Duration::from_secs(2),0.0,0.0),0.0);
     }
 }
