@@ -207,11 +207,12 @@ class Bus:
                 del self.original_speeds[sid]
                 raise
 
-    def restore_speeds(self):
+    def restore_speeds(self,ids=None):
         # Restore only after torque-off is independently read back. Never touch
         # a target or turn torque on here; keep failed entries for the next exit.
         failures={}
         for sid,units in list(getattr(self,'original_speeds',{}).items()):
+            if ids is not None and sid not in ids:continue
             try:
                 if self.read(sid,40,1)!=b'\0':raise IOError('未确认松力，未恢复速度')
                 data=struct.pack('<H',units)
@@ -269,5 +270,5 @@ class MockBus:
     def torque(self,sid,on): self.on[sid]=on; return on
     def set_speed(self,sid,units): self.speeds[sid]=units
     def goal(self,sid,count): self.goals.append((sid,count)); self.pos[sid]=count
-    def restore_speeds(self):return {}
+    def restore_speeds(self,ids=None):return {}
     def close(self): pass

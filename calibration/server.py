@@ -174,12 +174,11 @@ class App:
             if op=='id_enter':
                 if self.motion.job: raise ValueError('请先停止实物运动')
                 if self.profile!=self.saved: raise ValueError('请先保存或撤销标定草稿')
-                if getattr(self.bus,'original_speeds',{}): raise ValueError('仍有临时速度待恢复，请先在原舵机上完成断力和速度恢复，再分配 ID')
                 self.id_setup.active=True
                 return {'message':'已进入 ID 分配模式；暂停标定采样和运动，已编号舵机可保留连接，每次只新增一只待编号舵机'}
             if op=='id_exit':
                 self.id_setup.require_idle()
-                for sid in self.id_setup.found:
+                for sid in set(self.id_setup.found) | self.id_setup.held_ids:
                     if self.bus.read_raw(sid,40,1)!=b'\0': raise ValueError('请先确认发现的舵机全部断力')
                 self.id_setup.active=False;self.rows={}
                 return {'message':'已返回姿态标定；新机器人请重新记录 HOME、方向、限位和 IMU'}
@@ -187,6 +186,18 @@ class App:
                 self.id_setup.scan();return {'message':'正在扫描 ID 0～253，不修改舵机参数'}
             if op=='id_stop':
                 self.id_setup.scanning=False;return {'message':'已停止扫描，保留已发现的 ID'}
+            if op=='id_hold':
+                result=self.id_setup.hold(d.get('id'))
+                return {'message':'ID %s 已上力保持当前位置；请轻轻试扭确认，勿强行拧动。确认后先松力矩，再写入 ID'%result['id'],'servo':result}
+            if op=='off_all' and self.id_setup.active:
+                self.id_setup.scanning=False
+                failures={}
+                order=sorted(set(self.id_setup.found) | self.id_setup.held_ids)
+                for sid in order:
+                    try: self.id_setup.relax(sid)
+                    except Exception as error: failures[sid]=str(error)
+                if failures: raise IOError('部分未确认断力：'+str(failures))
+                return {'message':'已发现的舵机均已回读确认松力矩'}
             if op in ('id_select','id_relax'):
                 result=(self.id_setup.select if op=='id_select' else self.id_setup.relax)(d.get('id'))
                 return {'message':'ID %s 已%s'%(result['id'],'确认断力' if not result['torque'] else '读取，当前仍上力'),'servo':result}
@@ -465,7 +476,7 @@ class App:
         self.stop.set(); self.thread.join(timeout=3)
         with self.lock:
             self.motion.cancel('服务退出，已取消运动',release=True)
-            for sid in IDS:
+            for sid in set(IDS) | set(self.id_setup.found) | self.id_setup.held_ids | set(getattr(self.bus,'original_speeds',{})):
                 try: self.bus.torque(sid,False)
                 except Exception as e: print('shutdown torque-off:',sid,str(e),flush=True)
             failures=self.bus.restore_speeds()

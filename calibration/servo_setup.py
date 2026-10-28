@@ -22,6 +22,8 @@ class ServoSetup:
         self.found = []
         self.selected = None
         self.error = None
+        self.held_ids = set()
+        self.next_feedback = 0
 
     def state(self):
         return copy.deepcopy(dict(active=self.active, scanning=self.scanning,
@@ -43,7 +45,12 @@ class ServoSetup:
         self.next_id = 0; self.scanning = True
 
     def tick(self):
-        if not self.scanning: return
+        if not self.scanning:
+            if self.active and self.selected and time.monotonic() >= self.next_feedback:
+                self.next_feedback = time.monotonic() + .2
+                try: self.read_selected(self.selected['id'])
+                except Exception: pass  # read_selected publishes an unknown state on failure.
+            return
         sid = self.next_id
         try:
             if self.probe(sid): self.found.append(sid)
@@ -59,18 +66,52 @@ class ServoSetup:
     def select(self, sid):
         self.require_idle(); valid_id(sid)
         if sid not in self.found: raise ValueError('请先扫描并选择已发现的 ID')
-        if not self.probe(sid): raise IOError('该舵机已离线，请重新扫描')
-        torque = self.bus.read_raw(sid, 40, 1)[0]
-        if torque not in (0, 1): raise IOError('力矩状态无效')
-        self.selected = dict(id=sid, torque=bool(torque),
-            position_raw=int.from_bytes(self.bus.read_raw(sid, 56, 2), 'little'))
-        return self.selected
+        return self.read_selected(sid)
+
+    def read_selected(self, sid):
+        try:
+            if not self.probe(sid): raise IOError('该舵机已离线，请检查接线或重新扫描')
+            torque = self.bus.read_raw(sid, 40, 1)[0]
+            if torque not in (0, 1): raise IOError('力矩状态无效')
+            position = int.from_bytes(self.bus.read_raw(sid, 56, 2), 'little')
+            self.selected = dict(id=sid, torque=bool(torque), position_raw=position, error=None)
+            if torque == 0: self.held_ids.discard(sid)
+            return self.selected
+        except Exception as error:
+            self.selected = dict(id=sid, torque=None, position_raw=None, error=str(error))
+            raise
+
+    def hold(self, sid):
+        self.require_idle(); valid_id(sid)
+        if not self.selected or self.selected['id'] != sid:
+            raise ValueError('请先选中需要确认的舵机')
+        self.select(sid)
+        if self.selected['torque']: raise ValueError('所选舵机已上力，请轻轻试扭确认')
+        self.held_ids.add(sid)
+        try:
+            self.bus.torque(sid, True)
+            result = self.select(sid)
+            if not result['torque']: raise IOError('上力状态未回读确认')
+            return result
+        except Exception:
+            self.selected = None
+            try:
+                self.bus.write_raw(sid, 40, [0])
+                if self.bus.read_raw(sid, 40, 1) == b'\0': self.held_ids.discard(sid)
+            except Exception:
+                pass
+            raise
 
     def relax(self, sid):
-        self.select(sid)
+        self.require_idle(); valid_id(sid)
+        if sid not in self.found and sid not in self.held_ids: raise ValueError('请先扫描并选择已发现的 ID')
         self.bus.write_raw(sid, 40, [0])
         if self.bus.read_raw(sid, 40, 1) != b'\0': raise IOError('未回读确认断力')
-        return self.select(sid)
+        self.held_ids.discard(sid)
+        result = self.read_selected(sid)
+        failures = self.bus.restore_speeds(ids=(sid,)) if hasattr(self.bus, 'restore_speeds') else {}
+        if failures: raise IOError('已断力，但临时速度恢复未确认：'+str(failures))
+        return result
 
     def record(self, data):
         if self.journal:
@@ -87,6 +128,7 @@ class ServoSetup:
         if sid not in self.found or self.error:
             raise ValueError('请重新扫描并选择要改号的舵机')
         self.select(sid)
+        if sid in getattr(self.bus, 'original_speeds', {}): raise ValueError('请先松力矩并恢复临时速度，再改号')
         if self.selected['torque']: raise ValueError('请先松开所选舵机力矩')
         if sid == new_id: return {'message':'新旧 ID 相同，未写入'}
         if self.probe(new_id): raise ValueError('目标 ID 已被占用，未写入')

@@ -9,13 +9,13 @@
 <div class="rail-note"><span>操作提示</span><p>先调整，再记录，最后保存。记录 HOME 不会让关节运动。</p></div><nav class="page-nav" aria-label="页面切换"><a id="nav-settings">↗ 连接设置</a><a id="nav-control">↗ 机器人控制</a></nav></aside>
 <div class="workspace"><div class="workspace-heading"><div><span class="eyebrow">ROBOT CONFIGURATION</span><h1><span class="joint-page-title">关节标定</span><span class="id-page-title">分配舵机 ID</span><span class="imu-page-title">IMU 标定</span></h1><p class="joint-page-title">选择关节，调整到合适位置，再记录与保存。</p><p class="id-page-title">为新安装的舵机分配地址，已编号舵机可以保留连接。</p><p class="imu-page-title">采集身体姿态，校准安装方向与静止偏置。</p></div><span class="workspace-tag">本地设备配置</span></div>
 <section id="servo-id-panel" hidden aria-label="舵机 ID 分配">
-<h2>新机器人 · 逐只分配舵机 ID</h2><p>已编号舵机可保留连接，每次只新增一只出厂 ID 为 1 的舵机：扫描 → 选中 ID 1 → 选择未占用的安装关节 → 确认改号。不要同时接入两只同 ID 的舵机，扫描无法区分它们。</p>
-<p>此处只改 ID，不修改 P/D、限流、零点或位置，不会上力。完成后仍需为新机器人重新标定，不能直接使用旧机器人的 HOME。</p>
+<h2>新机器人 · 逐只分配舵机 ID</h2><p>已编号舵机可保留连接，每次只新增一只出厂 ID 为 1 的舵机：扫描 → 选中 ID → 上力矩并轻轻试扭确认实物 → 松力矩 → 选择安装关节并改号。不要同时接入两只同 ID 的舵机，扫描无法区分它们。</p>
+<p>扫描和选择不会自动上力。点击“所选舵机上力保持当前位置”后，轻轻试扭确认是哪只舵机，勿强行拧动。确认后先松力矩，再改号。完成后仍需为新机器人重新标定，不能直接使用旧机器人的 HOME。</p>
 <div class="actions"><button id="id-scan" class="primary">扫描 ID 0～253</button><button id="id-stop">停止扫描</button></div>
 <progress id="id-progress" max="254" value="0"></progress><p id="id-status" role="status"></p><div id="id-found" class="actions"></div>
 <p id="id-selected">尚未选中舵机</p><div class="fields"><label>安装关节 / 目标 ID<select id="id-joint"></select></label></div>
 <p><label><input id="id-single" type="checkbox">我确认只有一只舵机使用当前选中的 ID（其他不同 ID 的舵机可保留连接）</label></p>
-<div class="actions"><button id="id-relax">所选舵机松力矩</button><button id="id-change" class="primary">写入目标 ID 并核对</button></div>
+<div class="actions"><button id="id-hold" class="primary">所选舵机上力保持当前位置</button><button id="id-relax">所选舵机松力矩</button><button id="id-change" class="primary">写入目标 ID 并核对</button></div>
 <p id="id-result" role="status"></p><small>改号写入舵机永久存储，成功后需重新扫描。若需改回原 ID，仍按同样流程逐只操作。</small>
 </section>
 <main><section class="visual"><div class="toolbar"><div><span class="card-kicker">ROBOT VIEW</span><b id="modeLabel">参考站姿 · 只显示模型</b><small id="modelStatus">正在加载3D模型</small></div><div class="actions"><button id="live">跟随实物</button><button id="reference">看参考站姿</button><button id="resetCamera">重置视角</button><button id="stopDemo" hidden>停止示范</button></div></div>

@@ -15,16 +15,18 @@
   const old=$('id-found').dataset.ids,ids=state.found.join(',')+';'+(state.selected?.id??'');
   if(old!==ids){$('id-found').dataset.ids=ids;$('id-found').replaceChildren();for(const id of state.found){const b=document.createElement('button');b.textContent=`ID ${id}`;b.setAttribute('aria-pressed',String(state.selected?.id===id));b.onclick=()=>{$('id-single').checked=false;run({op:'id_select',id});};$('id-found').append(b);}}
   for(const b of $('id-found').children)b.disabled=pending||state.scanning;
-  const selected=state.selected;$('id-selected').textContent=selected?`选中 ID ${selected.id} · ${selected.torque?'仍上力':'已断力'} · 原始位置 ${selected.position_raw}`:'尚未选中舵机';
+  const selected=state.selected;$('id-selected').textContent=selected?`选中 ID ${selected.id} · ${selected.torque==null?'状态未知 · '+(selected.error||'等待读取'):selected.torque?'已上力 · 请轻轻试扭确认实物':'已断力'} · 原始位置 ${selected.position_raw??'—'}`:'尚未选中舵机';
   const stale=feed.age>1500||feed.busy;
   $('id-scan').disabled=pending||state.scanning||stale;$('id-stop').disabled=pending||!state.scanning||stale;
+  $('id-hold').disabled=pending||state.scanning||!selected||selected.torque!==false||!state.found.includes(selected.id)||Boolean(state.error)||stale;
   $('id-relax').disabled=pending||state.scanning||!selected||stale;
-  $('id-change').disabled=pending||state.scanning||!selected||selected.torque||!state.found.includes(selected.id)||Boolean(state.error)||!$('id-single').checked||stale;
+  $('id-change').disabled=pending||state.scanning||!selected||selected.torque!==false||!state.found.includes(selected.id)||Boolean(state.error)||!$('id-single').checked||stale;
  }
  async function refresh(){return feed.read();}
  async function run(body){if(pending)return;pending=true;render();try{const r=await command(body);show(r.message);if(body.op==='id_change')$('id-single').checked=false;await refresh();}catch(e){show(e.message,true);}finally{pending=false;render();}}
  $('tab-servo-id').onclick=()=>run({op:'id_enter'});$('tab-calibration').onclick=()=>{if(state?.active)run({op:'id_exit'});else render();};
  $('id-scan').onclick=()=>{$('id-single').checked=false;run({op:'id_scan'});};$('id-stop').onclick=()=>run({op:'id_stop'});
+ $('id-hold').onclick=()=>{if(confirm(`将 ID ${state?.selected?.id} 上力并保持当前位置。请承托好机器人，轻轻试扭确认是哪只舵机，勿强行拧动。`))run({op:'id_hold',id:state?.selected?.id});};
  $('id-relax').onclick=()=>run({op:'id_relax',id:state?.selected?.id});$('id-single').onchange=render;
  $('id-change').onclick=()=>{const sid=state?.selected?.id,new_id=Number($('id-joint').value);if(confirm(`确认只有一只舵机使用 ID ${sid}？其他不同 ID 的舵机可保持连接。将 ID ${sid} 改为 ${new_id}（永久保存），不会修改其他参数。`))run({op:'id_change',id:sid,new_id,single_confirmed:$('id-single').checked});};
  // New-machine settings stay reachable while calibration retains the serial port.
