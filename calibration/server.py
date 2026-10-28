@@ -164,7 +164,7 @@ class App:
                 k=str(sid); r=copy.deepcopy(self.rows.get(sid,{})); age=now-r.pop('at',0)
                 if age>.4: r.update(count=None,torque=None,error='反馈已过期')
                 r.update(id=sid,name=NAMES[i],label=LABELS[i],age_ms=round(age*1000),
-                         angle=None if not aligned or r.get('count') is None else angle(HOME[i],r['count'],self.profile['zero'][k],self.profile['sign'][k]))
+                         angle=None if r.get('count') is None else angle(HOME[i],r['count'],self.profile['zero'][k],self.profile['sign'][k]))
                 rows.append(r)
             imu=None;cfg=imu_calibration(self.profile,self.imu_config['model'])
             if self.imu and now-self.imu['at']<=MAX_AGE:
@@ -227,6 +227,15 @@ class App:
             if op=='id_change':
                 return self.id_setup.change(d.get('id'),d.get('new_id'),d.get('single_confirmed'))
             if self.id_setup.active: raise ValueError('ID 分配模式下禁止运动和标定保存，请先返回姿态标定')
+            if op=='prepare_joint':
+                sid=d.get('id')
+                request={'id':sid,'revision':d.get('revision'),'confirmed':d.get('confirmed')}
+                turns=self.command({'op':'reset_turns',**request})
+                try:
+                    self.command({'op':'reset_limits_one',**request})
+                except Exception as error:
+                    raise IOError('圈数已清除，但旧范围未确认清除，请核对状态；未设置硬件中位：%s'%error) from error
+                return {'message':'ID%s 已清圈并清除旧范围；保持断力。HOME、方向及硬件中位未改，其他关节不受影响'%sid,'turns':turns['result']}
             if op=='reset_turns':
                 if self.motion.job: raise ValueError('请先停止运动，再清除圈数')
                 if d.get('revision')!=self.revision: raise ValueError('草稿已变化，请刷新后重试')
@@ -263,21 +272,25 @@ class App:
                     validate_profile(profile)
                 atomic_save(self.args.profile,saved)
                 self.saved=saved;self.profile=draft;self.revision+=1
-                return {'message':'ID%s 硬件中位已回读确认：%s，保持断力；请重新记录整机HOME后再使用实时3D。未修改其他舵机、P/D或限流'%(sid,result['position']),'result':result}
-            if op=='reset_limits':
-                if self.motion.job: raise ValueError('请先停止运动，再清除旧限位')
+                return {'message':'ID%s 硬件中位已回读确认：%s，保持断力；此位置已记录为当前关节HOME，下一步确认范围与方向。未修改其他舵机、P/D或限流'%(sid,result['position']),'result':result}
+            if op=='reset_limits_one':
+                if self.motion.job: raise ValueError('请先停止运动，再清除当前关节旧限位')
                 if d.get('revision')!=self.revision: raise ValueError('草稿已变化，请刷新后重试')
-                if d.get('confirmed') is not True: raise ValueError('请确认这是新机器人，需要清除旧限位')
-                saved=copy.deepcopy(self.saved)
-                saved['lim']={str(sid):[0,4095] for sid in IDS}
-                saved['limits_pending']=list(IDS)
-                validate_profile(saved)
+                sid=d.get('id')
+                if type(sid) is not int or sid not in IDS: raise ValueError('无效舵机ID')
+                if d.get('confirmed') is not True: raise ValueError('请确认仅清除当前关节的旧限位')
+                saved=copy.deepcopy(self.saved);draft=copy.deepcopy(self.profile)
+                for profile in (saved,draft):
+                    profile['lim'][str(sid)]=[0,4095]
+                    profile['limits_pending']=[i for i in IDS if i==sid or i in profile.get('limits_pending',[])]
+                    validate_profile(profile)
                 atomic_save(self.args.profile,saved)
-                self.saved=saved
-                self.profile['lim']=copy.deepcopy(saved['lim'])
-                self.profile['limits_pending']=list(IDS)
-                self.revision+=1
-                return {'message':'旧限位已清除并备份；方向和HOME草稿保留。0～4095只是编码器范围，未确认机械限位前不能运行上下限测试'}
+                self.saved=saved;self.profile=draft;self.revision+=1
+                return {'message':'ID%s 旧范围已单独清除并备份；其他关节、HOME、方向和IMU均未修改。请为此关节重新确认机械范围'%sid}
+            if op=='reset_limits':
+                if type(d.get('id')) is not int or d['id'] not in IDS:
+                    raise ValueError('已停用不指定关节的全局范围清除，请刷新页面，只清理当前关节')
+                return self.command({**d,'op':'reset_limits_one'})
             if op=='confirm_limits':
                 if self.motion.job: raise ValueError('请先停止运动，再确认限位')
                 if d.get('revision')!=self.revision: raise ValueError('草稿已变化，请刷新后重试')

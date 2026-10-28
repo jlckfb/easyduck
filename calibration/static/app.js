@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import {OrbitControls} from './vendor/OrbitControls.js';
 import {STLLoader} from './vendor/STLLoader.js';
 const $=id=>document.getElementById(id), deg=x=>x*180/Math.PI;
+let jointStep=0;
 let state=null,selected=20,mode='live',lastFrame=0,busy=false,ready=false,formDirty=false;
 let root,manifest,home={},hinges=new Map(),meshes=[],geometry=new Map(),demoStart=0;
 const scene=new THREE.Scene(); scene.background=new THREE.Color(getComputedStyle(document.documentElement).getPropertyValue('--scene').trim()||'#101c17');
@@ -38,19 +39,20 @@ function toast(msg,error=false){const el=$('toast');el.replaceChildren();const c
 
 const feed=window.calibrationFeed;
 const command=d=>feed.command(d);
-async function run(d){try{const result=await command(d);toast(result.message,!!result.warning);await refresh();if(['preview','discard','solve','bias','capture_home_all','capture_home_one','reset_limits','confirm_limits','center_servo'].includes(d.op)){formDirty=false;fillEditor();}return result;}catch(e){toast(e.message,true);return null;}}
+async function run(d){try{const result=await command(d);toast(result.message,!!result.warning);await refresh();if(['preview','discard','solve','bias','capture_home_all','capture_home_one','reset_limits','reset_limits_one','prepare_joint','confirm_limits','center_servo'].includes(d.op)){formDirty=false;fillEditor();}return result;}catch(e){toast(e.message,true);return null;}}
 function fresh(){return state && feed.age<1500&&!feed.busy;}
-function choose(sid){if(formDirty && !confirm('此关节有未保存的编辑，切换会放弃当前表单修改。继续？'))return;if(mode==='demo')setMode('live');selected=sid;formDirty=false;fillEditor();highlight();renderRows();}
+function choose(sid){if(busy||state?.motion?.active)return toast('请先完成或停止当前操作，再切换关节',true);if(formDirty && !confirm('此关节有未保存的编辑，切换会放弃当前表单修改。继续？'))return;if(mode==='demo')setMode('live');selected=sid;formDirty=false;fillEditor();highlight();renderRows();setCalStep(0);}
 function fillEditor(){
  if(!state)return;const row=state.rows.find(r=>r.id===selected),k=String(selected),p=state.profile;
- $('railJoint').textContent='ID '+selected;$('jointSelect').value=String(selected);$('selectedName').textContent=`ID ${selected} · ${row.label}`;$('zero').value=p.zero[k];$('sign').value=p.sign[k];$('min').value=p.lim[k][0];$('max').value=p.lim[k][1];
- $('jointHelp').textContent=selected===34?'显示模型没有嘴部活动关节，可读数与标定；无法播放嘴部方向示范。':'示范只播放网页模型，不驱动实物。模型角度使用草稿参数。';
- $('demo').disabled=selected===34;updateReadouts();
+ $('railJoint').textContent='ID '+selected;$('jointSelect').value=String(selected);$('fineJoint').value=String(selected);$('selectedName').textContent=`ID ${selected} · ${row.label}`;$('zero').value=p.zero[k];$('sign').value=p.sign[k];$('min').value=p.lim[k][0];$('max').value=p.lim[k][1];
+ $('jointHelp').textContent=selected===34?'显示模型没有嘴部活动关节，可读数与标定；无法播放嘴部方向示范。':'方向相同就保持；不同才反转，最后保存。';
+ $('demo').disabled=selected===34;const i=state.rows.findIndex(r=>r.id===selected);$('prevJoint').disabled=i<=0;$('nextJoint').disabled=i>=state.rows.length-1;updateReadouts();
 }
-function updateReadouts(){if(!state)return;const row=state.rows.find(r=>r.id===selected);$('raw').value=row.count??'无新鲜读数';$('rawSigned').value=row.count==null?'无新鲜读数':row.position_signed??row.count;$('turnHint').textContent=row.count==null?'等待有效位置反馈':`单圈位置 ${row.count} / 4095${(row.position_signed??row.count)<0||(row.position_signed??row.count)>4095?' · 存在累计圈数，可断力后清除':' · 无需清圈'}`;$('degrees').value=!state.reference_aligned?'未记录站姿':row.angle==null?'未知':deg(row.angle).toFixed(1);}
+function updateReadouts(){if(!state)return;const row=state.rows.find(r=>r.id===selected);$('raw').value=row.count??'无新鲜读数';$('rawSigned').value=row.count==null?'无新鲜读数':row.position_signed??row.count;$('turnHint').textContent=row.count==null?'等待有效位置反馈':`单圈位置 ${row.count} / 4095${(row.position_signed??row.count)<0||(row.position_signed??row.count)>4095?' · 存在累计圈数，可断力后清除':' · 无需清圈'}`;$('degrees').value=row.angle==null?'未知':deg(row.angle).toFixed(1);}
 function renderMotion(){
  const moving=!!state?.motion?.active,row=state?.rows.find(r=>r.id===selected);
  for(const id of ['stepBack','stepForward','testLimits','captureZero','captureMin','captureMax','selectedTorque','homeSelected'])$(id).disabled=busy||moving||!fresh()||row?.count==null;
+ const i=state?.rows.findIndex(r=>r.id===selected)??-1;$('jointSelect').disabled=busy||moving;$('fineJoint').disabled=busy||moving;$('prevJoint').disabled=busy||moving||i<=0;$('nextJoint').disabled=busy||moving||!state||i>=state.rows.length-1;
  const pending=state?.profile?.limits_pending||[],unconfirmed=pending.includes(selected);
  $('limitStatus').textContent=unconfirmed?'新机器人：机械限位尚未确认；0～4095仅为编码器范围，可先小步调整。':'使用当前设置的计数上下限';
  $('testLimits').disabled=$('testLimits').disabled||unconfirmed;
@@ -61,12 +63,14 @@ function renderMotion(){
  $('motionStatus').textContent=state?.motion?(state.motion.id?`ID ${state.motion.id} · `:'')+state.motion.message:'没有实物运动任务';
  if(state?.motion?.feedback_error_counts)$('motionStatus').textContent+=`；实际与目标相差 ${(Math.abs(state.motion.feedback_error_counts)*360/4096).toFixed(2)}°`;
  $('motionStatus').classList.toggle('error',!!state?.motion?.error||!!state?.motion?.warning);
- $('stopMotion').disabled=!moving;$('applyExit').disabled=busy||moving;$('discard').disabled=moving;$('save').disabled=busy||moving;$('saveAll').disabled=busy||moving;$('save').hidden=document.body.classList.contains('imu-mode');
- $('onAll').disabled=busy||moving||!fresh();$('homeAll').disabled=busy||moving||!fresh();
- $('captureHomeAll').disabled=busy||moving||!fresh();$('live').disabled=!state?.reference_aligned;
+ $('stopMotion').disabled=!moving;$('applyExit').disabled=busy||moving;$('discard').disabled=moving;$('save').disabled=busy||moving;$('saveAll').disabled=busy||moving;$('save').hidden=document.body.classList.contains('imu-mode');$('flipDirection').disabled=busy||moving||!fresh();
+ $('onAll').disabled=busy||moving||!fresh();$('homeAll').disabled=busy||moving||!fresh();$('prepareJoint').disabled=busy||moving||!fresh()||row?.torque!==false||row?.count==null;
+ $('captureHomeAll').disabled=busy||moving||!fresh();$('live').disabled=!fresh();
+ for(const button of document.querySelectorAll('[data-trigger]'))button.disabled=$(button.dataset.trigger).disabled;
+ renderWorkbench();
 }
 function renderRows(){
- if(!$('jointSelect').options.length)for(const r of state.rows){const o=document.createElement('option');o.value=r.id;o.textContent=`${r.label} · ID ${r.id}`;$('jointSelect').append(o);}
+ for(const id of ['jointSelect','fineJoint'])if(!$(id).options.length)for(const r of state.rows){const o=document.createElement('option');o.value=r.id;o.textContent=`${r.label} · ID ${r.id}`;$(id).append(o);}
  if(!$('jointList').children.length)for(const r of state.rows){const el=document.createElement('div');el.className='joint';el.dataset.id=r.id;el.innerHTML=`<button class="pick">${r.label} <small>ID ${r.id} · ${r.name}</small></button><div class="reading"></div>`;
  el.querySelector('.pick').onclick=()=>choose(r.id);
  $('jointList').append(el);}
@@ -81,8 +85,9 @@ async function refresh(){
 }
 function applyState(next){
  const first=!state;state=next;home=next.home;lastFrame=performance.now();
- $('homeAlignment').textContent=next.reference_aligned?'已记录整机站姿 · 可跟随实物对比':'尚未记录整机站姿 · 3D显示参考姿态';
- if(mode==='live'&&!next.reference_aligned)setMode('reference');
+ if(first)setMode('live');
+ $('homeAlignment').textContent=next.reference_aligned?'已记录整机站姿 · 可跟随实物对比':'已加载当前零点与方向 · 未记录整机站姿，绝对姿态仅供对照';
+
  $('connection').textContent=next.mock?'离线演示 · 非实物':`已连接 · ${next.rows.filter(r=>r.count!=null).length}/15 在线`;
  $('rate').textContent=`${next.hz} Hz`;$('dirty').textContent=next.dirty?'有未保存草稿':'与已保存参数一致';
  const rt=next.runtime_support||{},rtSha=(rt.sha256||'未知').slice(0,8);
@@ -94,6 +99,11 @@ function applyState(next){
  $('imuDevice').textContent=`${device.model} / ${device.fusion} ｜ ${device.connected?'已连接':'未连接'} ｜ 姿态 ${age('quat')} / 角速度 ${age('gyro')} / 加速度 ${age('accel')} ｜ 能力：${['orientation','gyro','accel'].filter(k=>caps[k]).map(k=>({orientation:'芯片姿态',gyro:'角速度',accel:'加速度'}[k])).join('、')||'等待确认'} ｜ ${device.calibration_valid?'已有安装标定':'此型号尚未标定安装方向'}${device.error?' ｜ '+device.error:''}`;
  document.querySelectorAll('[data-pose]').forEach(b=>b.disabled=!device.fresh);$('bias').disabled=!device.fresh;}
  if(next.imu?.body_quat){const q=quat(next.imu.body_quat),e=new THREE.Euler().setFromQuaternion(q,'ZYX');$('imuReadout').textContent=`侧倾 ${deg(e.x).toFixed(1)}°　俯仰 ${deg(e.y).toFixed(1)}°　相对航向 ${deg(e.z).toFixed(1)}° ｜ 重力 [${next.imu.gravity.map(v=>v.toFixed(2)).join(', ')}] ｜ 转速 [${next.imu.body_gyro.map(v=>v.toFixed(3)).join(', ')}] rad/s`;}else $('imuReadout').textContent=next.imu?'传感器数据有效，请采集姿态并计算此型号的安装方向':'IMU无新鲜反馈，身体姿态不再更新';
+ const gravity=next.imu?.gravity,valid=next.imu_status?.fresh&&next.imu_status?.calibration_valid&&gravity?.length===3;
+ if(valid){const length=Math.hypot(...gravity),tilt=length>0?deg(Math.acos(Math.max(-1,Math.min(1,-gravity[2]/length)))):null;
+ $('uprightAngle').textContent=tilt==null?'无有效倾斜读数':`总倾角 ${tilt.toFixed(1)}°`;
+ $('uprightHint').textContent=`前后偏斜 ${deg(Math.atan2(gravity[0],-gravity[2])).toFixed(1)}° · 左右偏斜 ${deg(Math.atan2(gravity[1],-gravity[2])).toFixed(1)}°。同时观察实物躯干，不自动判定完成。`;
+ }else{$('uprightAngle').textContent='暂不能判断躯干垂直';$('uprightHint').textContent='需要新鲜IMU姿态与已标定的安装方向；先直接观察实物。';}
  renderRows();renderMotion();if(first)fillEditor();else updateReadouts();
 }
 feed.subscribe(applyState);
@@ -112,8 +122,8 @@ function animate(t){requestAnimationFrame(animate);const ok=fresh();$('stale').s
  }
  controls.update();renderer.render(scene,camera);
 }
-function setMode(m){if(m==='live'&&!state?.reference_aligned)m='reference';mode=m;demoStart=performance.now();$('modeLabel').textContent=m==='live'?'实物实时跟随':m==='reference'?'参考站姿 · 只显示模型':'正方向示范 · 只动模型';$('demo').textContent=m==='demo'?'停止模型示范':'看模型正方向';$('stopDemo').hidden=m!=='demo';}
-$('live').onclick=()=>setMode('live');$('reference').onclick=()=>setMode('reference');$('demo').onclick=()=>setMode(mode==='demo'?'live':'demo');$('stopDemo').onclick=()=>setMode('live');$('resetCamera').onclick=resetCamera;
+function setMode(m){mode=m;demoStart=performance.now();$('modeLabel').textContent=m==='live'?'实物实时跟随':m==='reference'?'参考站姿 · 只显示模型':'正方向示范 · 只动模型';$('demo').textContent=m==='demo'?'停止模型示范':'看 3D 正方向（只动模型）';$('stopDemo').hidden=m!=='demo';}
+$('live').onclick=()=>setMode('live');$('reference').onclick=()=>setMode('reference');$('demo').onclick=()=>{document.body.classList.remove('model-collapsed');$('toggleModel').textContent='收起 3D';$('toggleModel').setAttribute('aria-expanded','true');setMode(mode==='demo'?'live':'demo');};$('stopDemo').onclick=()=>setMode('live');$('resetCamera').onclick=resetCamera;
 async function moveSelected(op,d={}){
  if(!fresh())return toast('没有新鲜反馈，请等待连接恢复',true);
  if(formDirty&&!await previewEditor())return;
@@ -136,21 +146,30 @@ $('resetTurns').onclick=async()=>{
 $('centerServo').onclick=async()=>{
  if(!fresh()||busy||state.motion?.active)return;
  if(formDirty&&!await previewEditor())return;
- if(!confirm(`确认 ID ${selected} 已断力，并已手动摆到正确的安装中位？此操作会永久重设这只舵机的硬件中位到2048附近，不上力、不转动、不改P/D和限流。原软件HOME将失效，需要重新记录整机HOME。`))return;
- busy=true;renderMotion();try{await run({op:'center_servo',id:selected,revision:state.revision,confirmed:true});}finally{busy=false;renderMotion();}
+ if(!confirm(`确认 ID ${selected} 已断力，并已手动摆到正确的安装中位？此操作会永久重设这只舵机的硬件中位到2048附近，不上力、不转动、不改P/D和限流。会同时记录当前位置为此关节HOME，接下来确认范围与方向。`))return;
+ busy=true;renderMotion();try{const result=await run({op:'center_servo',id:selected,revision:state.revision,confirmed:true});if(result)setCalStep(1);}finally{busy=false;renderMotion();}
+};
+$('prepareJoint').onclick=async()=>{
+ if(!fresh()||busy||state.motion?.active)return;
+ if(state.rows.find(r=>r.id===selected)?.torque!==false)return toast('先松开当前关节',true);
+ if(!confirm(`清除 ID ${selected} 的圈数和旧范围？只处理这只关节，不上力、不转动，也不改HOME、方向和硬件中位。`))return;
+ const pendingHome=formDirty?{zero:$('zero').value,sign:$('sign').value}:null;
+ busy=true;renderMotion();
+ try{const result=await run({op:'prepare_joint',id:selected,revision:state.revision,confirmed:true});if(result&&pendingHome){$('zero').value=pendingHome.zero;$('sign').value=pendingHome.sign;formDirty=true;}}
+ finally{busy=false;renderMotion();}
 };
 $('resetLimits').onclick=async()=>{
  if(!fresh()||busy||state.motion?.active)return;
  const pendingHome=formDirty?{zero:$('zero').value,sign:$('sign').value}:null;
- if(!confirm('这是新机器人？将备份并清除全部旧限位，保留方向与HOME草稿，不执行动作。0～4095仅是编码器范围，不代表机械行程。确认限位前禁止自动上下限测试。'))return;
- busy=true;renderMotion();try{const result=await run({op:'reset_limits',revision:state.revision,confirmed:true});if(result&&pendingHome){$('zero').value=pendingHome.zero;$('sign').value=pendingHome.sign;formDirty=true;}}finally{busy=false;renderMotion();}
+ if(!confirm(`仅清除 ID ${selected} 继承的旧范围？会备份已有文件，保留其他关节、HOME、方向和IMU。0～4095只是编码器范围，接下来需手动确认此关节机械范围。`))return;
+ busy=true;renderMotion();try{const result=await run({op:'reset_limits_one',id:selected,revision:state.revision,confirmed:true});if(result&&pendingHome){$('zero').value=pendingHome.zero;$('sign').value=pendingHome.sign;formDirty=true;}}finally{busy=false;renderMotion();}
 };
 $('confirmLimits').onclick=async()=>{
  if(!fresh()||busy||state.motion?.active)return;
  if(formDirty&&!await previewEditor())return;
  const [lo,hi]=state.profile.lim[String(selected)];
  if(!confirm(`确认 ID ${selected} 的 ${lo}～${hi} 是你已核对的机械安全范围？不要把编码器全范围直接当机械范围。确认后才启用自动上下限测试。`))return;
- busy=true;renderMotion();try{await run({op:'confirm_limits',id:selected,revision:state.revision});}finally{busy=false;renderMotion();}
+ busy=true;renderMotion();try{const confirmed=await run({op:'confirm_limits',id:selected,revision:state.revision});if(confirmed){const saved=await run({op:'save_one',id:selected,revision:state.revision});if(saved)setCalStep(2);}}finally{busy=false;renderMotion();}
 };
 $('testLimits').onclick=()=>moveSelected('test_limits');$('stopMotion').onclick=()=>run({op:'stop_motion'});
 
@@ -177,11 +196,20 @@ $('discard').onclick=()=>{if(formDirty&&!state?.dirty){formDirty=false;fillEdito
 async function saveCalibration(all){
  if(!state||busy||state.motion?.active)return;
  if(formDirty&&!await previewEditor())return;
- if(!state.dirty)return toast('参数没有变化，无需保存');
+ if(!state.dirty){toast('参数与已保存值一致');return {unchanged:true};}
  busy=true;renderMotion();
- try{await run({op:all?'save':'save_one',...(all?{}:{id:selected}),revision:state.revision});}finally{busy=false;renderMotion();}
+ try{return await run({op:all?'save':'save_one',...(all?{}:{id:selected}),revision:state.revision});}finally{busy=false;renderMotion();}
 }
-$('save').onclick=()=>saveCalibration(false);
+$('save').onclick=async()=>{
+ const advance=jointStep===2&&!document.body.classList.contains('whole-check');
+ const result=await saveCalibration(false);if(!result||!advance)return;
+ const index=state.rows.findIndex(r=>r.id===selected);
+ if(index===state.rows.length-1)setBench('whole');else choose(state.rows[index+1].id);
+};
+$('flipDirection').onclick=async()=>{if(!fresh()||busy||state.motion?.active)return;$('sign').value=String(-Number($('sign').value));formDirty=true;await previewEditor();};
+$('prevJoint').onclick=()=>{const i=state?.rows.findIndex(r=>r.id===selected);if(i>0){const old=selected;choose(state.rows[i-1].id);if(old!==selected)setCalStep(0);}};
+$('nextJoint').onclick=()=>{const i=state?.rows.findIndex(r=>r.id===selected);if(i>=0&&i<state.rows.length-1){const old=selected;choose(state.rows[i+1].id);if(old!==selected)setCalStep(0);}};
+for(const button of document.querySelectorAll('[data-trigger]'))button.onclick=()=>$(button.dataset.trigger).click();
 $('saveAll').onclick=()=>saveCalibration(true);
 $('applyExit').onclick=()=>navigateTo('control');
 $('export').onclick=()=>{if(!state)return;const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(state.profile,null,2)],{type:'application/json'}));a.download='xgoduck-calibration.json';a.click();URL.revokeObjectURL(a.href);};
@@ -212,6 +240,27 @@ $('tab-imu').onclick=()=>{if(state?.id_setup?.active)return toast('请先返回�
 $('tab-calibration').addEventListener('click',()=>{document.body.classList.remove('imu-mode');$('tab-imu').setAttribute('aria-selected','false');});
 $('tab-servo-id').addEventListener('click',()=>{document.body.classList.remove('imu-mode');$('tab-imu').setAttribute('aria-selected','false');});
 
-$('jointSelect').onchange=()=>{const next=Number($('jointSelect').value);choose(next);$('jointSelect').value=String(selected);};
+$('jointSelect').onchange=()=>{const next=Number($('jointSelect').value);choose(next);$('jointSelect').value=String(selected);$('fineJoint').value=String(selected);};
 
 new MutationObserver(()=>{scene.background.set(getComputedStyle(document.documentElement).getPropertyValue('--scene').trim());}).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
+
+function renderWorkbench(){
+ const whole=document.body.classList.contains('whole-check'),moving=!!state?.motion?.active;
+ const panels=['panelPrepare','panelLimits','panelDirection'];
+ panels.forEach((id,i)=>$(id).hidden=i!==jointStep);
+ for(const button of document.querySelectorAll('[data-cal-step]')){button.setAttribute('aria-selected',String(Number(button.dataset.calStep)===jointStep));button.disabled=busy||moving;}
+ $('backStep').disabled=busy||moving||jointStep===0;$('nextStep').hidden=jointStep===2;$('nextStep').disabled=busy||moving;
+ $('stepHint').textContent=['摆正后设中位，再定范围','范围保存后检查正方向','方向一致后保存，进入下一只'][jointStep];
+ const last=state?.rows.at(-1)?.id===selected;
+ $('save').textContent=whole?'保存当前关节 HOME':jointStep===2?(last?'保存并检查整机':'保存并下一关节 →'):'保存当前关节';
+ $('workJoint').setAttribute('aria-selected',String(!whole));$('workWhole').setAttribute('aria-selected',String(whole));
+ document.querySelector('.whole-workflow').hidden=!whole;
+}
+function setCalStep(step){jointStep=Math.max(0,Math.min(2,step));renderWorkbench();}
+function setBench(value){document.body.classList.toggle('whole-check',value==='whole');renderWorkbench();}
+for(const button of document.querySelectorAll('[data-cal-step]'))button.onclick=()=>setCalStep(Number(button.dataset.calStep));
+$('backStep').onclick=()=>setCalStep(jointStep-1);$('nextStep').onclick=()=>setCalStep(jointStep+1);
+$('workJoint').onclick=()=>setBench('joint');$('workWhole').onclick=()=>setBench('whole');
+$('fineJoint').onchange=()=>choose(Number($('fineJoint').value));
+$('toggleModel').onclick=()=>{const collapsed=document.body.classList.toggle('model-collapsed');$('toggleModel').textContent=collapsed?'展开 3D':'收起 3D';$('toggleModel').setAttribute('aria-expanded',String(!collapsed));};
+renderWorkbench();
