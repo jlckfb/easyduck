@@ -65,10 +65,11 @@ pub const REGISTRY: &[Entry] = &[
     // ── [bus] ────────────────────────────────────────────────────────────────
     entry("bus.port", Kind::Text, "Dynamixel serial port device"),
     // Recovered TaishanPi IMU settings; defaults remain defined by Params.
+    entry("imu.model", Kind::Text, "IMU chip: lsm6dsv16x or bno085"),
     entry("imu.source", Kind::Text, "IMU source: bus or i2c"),
-    entry("imu.i2c_dev", Kind::Text, "I2C device for the LSM6DSV16X"),
+    entry("imu.i2c_dev", Kind::Text, "I2C device for the selected IMU"),
     entry("imu.i2c_addr", Kind::Integer, "7-bit IMU I2C address"),
-    entry("imu.fusion", Kind::Text, "Orientation fusion: sflp or comp"),
+    entry("imu.fusion", Kind::Text, "Fusion: LSM sflp/comp; BNO085 game_rv"),
     entry("imu.lever_arm", Kind::FloatTriple, "IMU position x,y,z in trunk frame, metres"),
     entry("imu.g_filter_k", Kind::Float, "Complementary fusion correction gain"),
     entry("imu.accel_trust_g", Kind::Float, "Accelerometer trust tolerance, g"),

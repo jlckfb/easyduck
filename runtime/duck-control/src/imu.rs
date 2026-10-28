@@ -209,7 +209,7 @@ fn half(bits: u16) -> f64 {
 }
 
 /// Hamilton product, scalar-first.
-fn mul(a: [f64; 4], b: [f64; 4]) -> [f64; 4] {
+pub(crate) fn mul(a: [f64; 4], b: [f64; 4]) -> [f64; 4] {
     let ([aw, ax, ay, az], [bw, bx, by, bz]) = (a, b);
     [
         aw * bw - ax * bx - ay * by - az * bz,
@@ -230,7 +230,7 @@ pub fn rotate(q: [f64; 4], v: [f64; 3]) -> [f64; 3] {
 }
 
 /// `q⁻¹ · v · q` — world vector expressed in the body frame.
-fn rotate_inverse(q: [f64; 4], v: [f64; 3]) -> [f64; 3] {
+pub(crate) fn rotate_inverse(q: [f64; 4], v: [f64; 3]) -> [f64; 3] {
     let (t, c) = cross_terms(q, v);
     [
         v[0] - q[0] * t[0] + c[0],
@@ -391,36 +391,9 @@ mod tests {
     }
 }
 
-/// The age is measured from an accepted orientation, independently of servo traffic.
-#[derive(Default)]
-pub(crate) struct ImuFreshness {
-    last_update: Option<std::time::Instant>,
-}
-impl ImuFreshness {
-    pub(crate) fn update(&mut self, now: std::time::Instant) { self.last_update = Some(now); }
-    pub(crate) fn fresh(&self, now: std::time::Instant) -> bool {
-        self.last_update.is_some_and(|t|
-            now.saturating_duration_since(t) < std::time::Duration::from_millis(150))
-    }
-}
-
 #[cfg(test)]
 mod freshness_tests {
     use super::*;
-    use std::time::{Duration, Instant};
-    #[test]
-    fn orientation_expires_by_time_and_recovers_only_on_update() {
-        let mut age = ImuFreshness::default();
-        let t = Instant::now();
-        assert!(!age.fresh(t));
-        age.update(t);
-        assert!(age.fresh(t + Duration::from_millis(149)));
-        assert!(!age.fresh(t + Duration::from_millis(150)));
-        // Reading joints and querying the age cannot keep orientation alive.
-        for ms in [160, 500, 5000] { assert!(!age.fresh(t + Duration::from_millis(ms))); }
-        age.update(t + Duration::from_secs(5));
-        assert!(age.fresh(t + Duration::from_secs(5)));
-    }
     #[test]
     fn tagged_identical_identity_samples_are_valid_but_invalid_quaternions_are_not() {
         let mut d = SflpDecoder::default();

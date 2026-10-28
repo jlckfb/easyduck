@@ -67,8 +67,18 @@ def validate_profile(d):
     pending=d.get('limits_pending',[])
     if not isinstance(pending,list) or any(type(i) is not int or i not in IDS for i in pending) or len(set(pending))!=len(pending):
         raise ValueError('未确认限位列表无效')
-    imu=d['imu']; mount=imu['mount']; bias=imu['gyro_bias']
+    if not isinstance(d.get('imu_calibrations',{}),dict):raise ValueError('IMU标定表无效')
+    entries=[d['imu']]+list(d.get('imu_calibrations',{}).values())
+    for model,cfg in d.get('imu_calibrations',{}).items():
+        if model not in ('lsm6dsv16x','bno085') or cfg.get('model')!=model:raise ValueError('IMU标定型号不匹配')
+    for imu in entries:validate_imu(imu)
+    return d
+
+def validate_imu(imu):
+    if imu.get('model','lsm6dsv16x') not in ('lsm6dsv16x','bno085') or imu.get('frame','sensor-v1')!='sensor-v1':raise ValueError('未知IMU标定型号或坐标约定')
+    if 'mount_valid' in imu and type(imu['mount_valid']) is not bool:raise ValueError('IMU安装方向状态无效')
+    mount=imu['mount']; bias=imu['gyro_bias']
     if len(mount)!=4 or len(bias)!=3 or not all(type(x) in (int,float) and math.isfinite(x) for x in mount+bias):
         raise ValueError('IMU参数无效')
     if abs(sum(x*x for x in mount)-1)>.001 or max(abs(x) for x in bias)>.2: raise ValueError('IMU旋转或静止偏置无效')
-    return d
+    return imu

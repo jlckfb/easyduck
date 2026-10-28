@@ -39,17 +39,18 @@ pub struct Params {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, default)]
 pub struct Imu {
+    /// Registered I2C chip. Omitted legacy configs mean LSM6DSV16X.
+    pub model: String,
     /// `"bus"`: the IMU board riding the Dynamixel bus (the original design).
-    /// `"i2c"`: a LSM6DSV16X wired to an I²C bus, read directly by this process.
+    /// `"i2c"`: the selected IMU wired to an I²C bus, read directly by this process.
     pub source: String,
-    /// I²C bus device when `source = "i2c"`. I2C3_M0 on the 1F board.
+    /// I²C bus device when `source = "i2c"`; the deployed path is configuration, not a chip default.
     pub i2c_dev: String,
-    /// 7-bit I²C address when `source = "i2c"`. AD0 tied low gives 0x6A.
+    /// 7-bit address: LSM 0x6A/0x6B, BNO085 0x4A/0x4B.
     pub i2c_addr: u8,
     /// Orientation pipeline on the I²C chip:
-    /// `"sflp"` — the chip's own sensor-fusion block (default; behaviour identical to the
-    /// deployed 403cc87 build), `"comp"` — host-side lever-arm-compensated complementary
-    /// fusion (compensates the dynamic lever acceleration of the raised mounting position).
+    /// LSM: `"sflp"` chip fusion or `"comp"` host complementary fusion.
+    /// BNO085: `"game_rv"` chip fusion; LSM-specific modes are rejected.
     pub fusion: String,
     /// Lever arm: IMU position relative to the trunk origin, in the trunk frame (metres).
     /// Used by the `"comp"` fusion to subtract ω×(ω×r)+α×r from the accelerometer.
@@ -66,6 +67,7 @@ impl Default for Imu {
     fn default() -> Self {
         Self {
             source: "bus".into(),
+            model: "lsm6dsv16x".into(),
             i2c_dev: "/dev/i2c-3".into(),
             i2c_addr: 0x6A,
             fusion: "sflp".into(),
@@ -939,6 +941,8 @@ impl Default for UpdateGate {
 
 #[derive(Debug, thiserror::Error)]
 pub enum ParamsError {
+    #[error("{path}: invalid IMU configuration: {message}")]
+    Imu {path:String,message:String},
     #[error("reading {path}: {source}")]
     Read {
         path: String,
@@ -1009,6 +1013,9 @@ impl Params {
                         source,
                     });
                 };
+                if ignored.iter().any(|key|key.starts_with("imu.")) {
+                    return Err(ParamsError::Parse{path:path.display().to_string(),source});
+                }
                 tracing::warn!(
                     path = %path.display(),
                     ignored = %ignored.join(", "),
@@ -1033,6 +1040,16 @@ impl Params {
     /// Reject values that would produce a loop that cannot work, at startup rather than as
     /// a division by zero three seconds later.
     fn validate(&self, path: &Path) -> Result<(), ParamsError> {
+        let m=&self.imu;
+        let valid=match m.model.as_str() {
+            "lsm6dsv16x"=>[0x6a,0x6b].contains(&m.i2c_addr)&&["sflp","comp"].contains(&m.fusion.as_str()),
+            "bno085"=>[0x4a,0x4b].contains(&m.i2c_addr)&&m.fusion=="game_rv",_=>false,
+        };
+        if !["bus","i2c"].contains(&m.source.as_str()) || !valid || !m.i2c_dev.starts_with("/dev/i2c-")
+            || !m.g_filter_k.is_finite() || !(0.0..=1.0).contains(&m.g_filter_k) || !m.accel_trust_g.is_finite()
+            || m.accel_trust_g<=0.0 || m.lever_arm.iter().any(|v|!v.is_finite()) {
+            return Err(ParamsError::Imu{path:path.display().to_string(),message:"model/device/address/fusion or filter values do not match".into()});
+        }
         if self.control.hz == 0 || self.control.hz > 1000 {
             return Err(ParamsError::Rate {
                 path: path.display().to_string(),
@@ -1547,4 +1564,18 @@ mod commanded_posture_slot_tests {
         let r=p.resolved();assert_eq!(r.sitstand,Some("getup.onnx".into()));assert_eq!(r.posture,Some("posture.onnx".into()));
         assert!(PolicyParams::default().resolved().posture.is_none());
     }
+}
+
+#[cfg(test)] mod imu_contract_tests {
+    use super::*;
+    #[test] fn legacy_and_two_chips() {
+        let old:Params=toml::from_str("[imu]\nsource='i2c'\ni2c_dev='/dev/i2c-2'\ni2c_addr=107\nfusion='sflp'").unwrap();assert_eq!(old.imu.model,"lsm6dsv16x");assert!(old.validate(Path::new("test")).is_ok());
+        let mut b=old;b.imu.model="bno085".into();b.imu.i2c_addr=75;assert!(b.validate(Path::new("test")).is_err());b.imu.fusion="game_rv".into();assert!(b.validate(Path::new("test")).is_ok());b.imu.model="unknown".into();assert!(b.validate(Path::new("test")).is_err());
+    }
+    #[test] fn misspelled_imu_key_is_not_silently_pruned() {
+        let path=std::env::temp_dir().join(format!("easyduck-imu-config-{}.toml",std::process::id()));
+        std::fs::write(&path,"[imu]\nmodle='bno085'\n").unwrap();
+        let result=Params::load(&path,true);std::fs::remove_file(&path).unwrap();assert!(result.is_err());
+    }
+
 }

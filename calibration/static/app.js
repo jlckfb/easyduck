@@ -89,7 +89,11 @@ function applyState(next){
  $('runtime').textContent=rt.supported?`正式程序 robotd ${rtSha} 会读网页标定（${rt.reason}），在启动时读取：保存后点“退出标定并应用到正式控制”才生效。修改舵机方向后，需把导出的标定交给训练开发同步。现在为标定模式，行走服务停止。`:`当前正式程序（robotd ${rtSha}）不读网页标定，保存不会影响网页控制。${rt.reason&&rt.reason!=='当前正式程序不读网页标定'?'（'+rt.reason+'）':''}`;
  Object.assign($('runtime').style,rt.supported?{borderLeftColor:'',background:'',color:''}:{borderLeftColor:'#e0715f',background:'#4a2522',color:'#ffd6cf'});
  $('poseStatus').textContent=Object.keys(next.poses).length?'已采集：'+Object.keys(next.poses).map(p=>({level:'站直',front_down:'前倾',left_down:'左倾',front_up:'后倾',right_down:'右倾'}[p])).join('、'):'尚未采集姿态';
- if(next.imu){const q=quat(next.imu.body_quat),e=new THREE.Euler().setFromQuaternion(q,'ZYX');$('imuReadout').textContent=`侧倾 ${deg(e.x).toFixed(1)}°　俯仰 ${deg(e.y).toFixed(1)}°　相对航向 ${deg(e.z).toFixed(1)}° ｜ 重力 [${next.imu.gravity.map(v=>v.toFixed(2)).join(', ')}] ｜ 转速 [${next.imu.body_gyro.map(v=>v.toFixed(3)).join(', ')}] rad/s`;}else $('imuReadout').textContent='IMU无新鲜反馈，身体姿态不再更新';
+ const device=next.imu_status;
+ if(device){const ages=device.ages_ms||{},age=k=>ages[k]===undefined?'无数据':`${ages[k]} ms`;const caps=device.capabilities||{};
+ $('imuDevice').textContent=`${device.model} / ${device.fusion} ｜ ${device.connected?'已连接':'未连接'} ｜ 姿态 ${age('quat')} / 角速度 ${age('gyro')} / 加速度 ${age('accel')} ｜ 能力：${['orientation','gyro','accel'].filter(k=>caps[k]).map(k=>({orientation:'芯片姿态',gyro:'角速度',accel:'加速度'}[k])).join('、')||'等待确认'} ｜ ${device.calibration_valid?'已有安装标定':'此型号尚未标定安装方向'}${device.error?' ｜ '+device.error:''}`;
+ document.querySelectorAll('[data-pose]').forEach(b=>b.disabled=!device.fresh);$('bias').disabled=!device.fresh;}
+ if(next.imu?.body_quat){const q=quat(next.imu.body_quat),e=new THREE.Euler().setFromQuaternion(q,'ZYX');$('imuReadout').textContent=`侧倾 ${deg(e.x).toFixed(1)}°　俯仰 ${deg(e.y).toFixed(1)}°　相对航向 ${deg(e.z).toFixed(1)}° ｜ 重力 [${next.imu.gravity.map(v=>v.toFixed(2)).join(', ')}] ｜ 转速 [${next.imu.body_gyro.map(v=>v.toFixed(3)).join(', ')}] rad/s`;}else $('imuReadout').textContent=next.imu?'传感器数据有效，请采集姿态并计算此型号的安装方向':'IMU无新鲜反馈，身体姿态不再更新';
  renderRows();renderMotion();if(first)fillEditor();else updateReadouts();
 }
 feed.subscribe(applyState);
@@ -104,7 +108,7 @@ function animate(t){requestAnimationFrame(animate);const ok=fresh();$('stale').s
   if(mode==='demo'&&name===state.rows.find(r=>r.id===selected)?.name)value+=Math.PI/12*(.5-.5*Math.cos((t-demoStart)/1000*Math.PI));
   h.pivot.quaternion.setFromAxisAngle(h.axis,value);}
   if(mode!=='live'||!$('followImu').checked)root.quaternion.identity();
-  else if(ok&&state.imu)root.quaternion.copy(quat(state.imu.body_quat));
+  else if(ok&&state.imu?.body_quat)root.quaternion.copy(quat(state.imu.body_quat));
  }
  controls.update();renderer.render(scene,camera);
 }

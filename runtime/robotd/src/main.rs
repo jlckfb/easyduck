@@ -721,7 +721,8 @@ async fn main() -> ExitCode {
 #[cfg(target_os = "linux")]
 fn run_init(params: &Params, duration: Duration) -> ExitCode {
     let imu_i2c = match params.imu.source.as_str() {
-        "i2c" => Some(duck_control::imu_i2c::I2cImuConfig {
+        "i2c" => Some(duck_control::imu_driver::I2cImuConfig {
+            model: params.imu.model.clone(),
             dev: params.imu.i2c_dev.clone(),
             addr: params.imu.i2c_addr,
             fusion: params.imu.fusion.clone(),
@@ -894,7 +895,8 @@ fn open_bus(port: &str, imu: &robotd_params::Imu, attempt: u32, gain_i: u16, gai
     let loud = attempt == 0 || attempt.is_multiple_of(STARTUP_READ_LOG_EVERY);
 
     let imu_i2c = match imu.source.as_str() {
-        "i2c" => Some(duck_control::imu_i2c::I2cImuConfig {
+        "i2c" => Some(duck_control::imu_driver::I2cImuConfig {
+            model: imu.model.clone(),
             dev: imu.i2c_dev.clone(),
             addr: imu.i2c_addr,
             fusion: imu.fusion.clone(),

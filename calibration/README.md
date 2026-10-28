@@ -1,6 +1,6 @@
 # 舵机与 IMU 标定台
 
-Python 3.9+ 标准库服务，默认端口 8766。页面使用本地 three.js 显示机器人模型，提供舵机零点、方向、限位与 IMU 标定。
+Python 3.11+ 标准库服务，默认端口 8766。IMU 从同一份 `/etc/robot/robotd.toml` 读取型号、总线、地址与融合模式（可用 `--config` 指定）；支持 LSM6DSV16X 与 BNO085，详见 [IMU 驱动接入](../docs/imu-drivers.md)。页面使用本地 three.js 显示机器人模型，提供舵机零点、方向、限位与 IMU 标定。
 
 默认串口 `/dev/ttyS3`，基线 `/etc/robot/zero_pos.json`，保存配置 `/etc/robot/visual_calibration.json`。正式标定服务与 `robotd`、`padd`、`xgoduck-web` 互斥；同一时刻只能有一个程序占用舵机串口。标定操作可能上力、改变姿态或写入配置，操作前承托机器人。
 

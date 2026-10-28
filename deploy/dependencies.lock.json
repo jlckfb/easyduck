@@ -20,7 +20,7 @@
     "reference_libudev_pc_sha256": "0397e94f000e09333be587728103128fa3548e07c2aef39c165c7db05597ca4b"
   },
   "target_runtime": {
-    "python": "Python 3 standard library",
+    "python": "Python >=3.11 standard library (calibration uses tomllib); no additional Python packages",
     "python_dependency_files": [
       "web/requirements.lock",
       "calibration/requirements.lock"

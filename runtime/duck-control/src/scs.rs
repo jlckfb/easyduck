@@ -7,8 +7,8 @@ use std::path::Path;
 use std::time::{Duration, Instant};
 use serialport::SerialPort;
 use crate::imu::ImuData;
-use crate::imu_i2c::I2cImuConfig;
-use crate::imu_i2c::{FusionMode, Lsm6dsv16xI2c};
+use crate::imu_driver::I2cImuConfig;
+use crate::imu_driver::{Reader, Calibration};
 use crate::io::{ImuStale, IoError, JointTargets, Result, RobotIo, Sensors, SlowSensors};
 use crate::model::{DEFAULT_POSITION, JOINT_IDS, NUM_JOINTS};
 
@@ -139,7 +139,7 @@ fn load_limits(path: &Path) -> Result<[[u16; 2]; NUM_JOINTS]> {
     parse_limits(&bytes)
 }
 
-pub struct ScsIo { port: Box<dyn SerialPort>, imu: Option<Lsm6dsv16xI2c>, last_imu: ImuData, imu_misses: (u64, u64), kd: u16, enable_gain: Option<u16>, armed: bool, cal_zero: [u16; NUM_JOINTS], cal_sign: [f64; NUM_JOINTS], limits: [[u16; 2]; NUM_JOINTS], gain_profile: Option<JointGainProfile>, turn_offsets: [i32;NUM_JOINTS] }
+pub struct ScsIo { port: Box<dyn SerialPort>, imu: Option<Reader>, last_imu: ImuData, imu_misses: (u64, u64), kd: u16, enable_gain: Option<u16>, armed: bool, cal_zero: [u16; NUM_JOINTS], cal_sign: [f64; NUM_JOINTS], limits: [[u16; 2]; NUM_JOINTS], gain_profile: Option<JointGainProfile>, turn_offsets: [i32;NUM_JOINTS] }
 
 fn checksum(body: &[u8]) -> u8 { (!body.iter().map(|v| *v as u16).sum::<u16>()) as u8 }
 fn frame(id: u8, instr: u8, params: &[u8]) -> Vec<u8> { let mut b = vec![id, (params.len()+2) as u8, instr]; b.extend_from_slice(params); let mut o=vec![0xff,0xff]; o.extend_from_slice(&b); o.push(checksum(&b)); o }
@@ -197,8 +197,17 @@ impl ScsIo {
         let limits = calibration.limits;
         let gain_profile = load_gain_profile(Path::new(JOINT_GAIN_FILE))?;
         let serial = serialport::new(port, BAUD).timeout(READ_TIMEOUT).open().map_err(|e| IoError::Port { path: port.into(), source: std::io::Error::other(e) })?;
-        let mut imu = match cfg { Some(c) => { let mode=if c.fusion=="comp" {FusionMode::Comp} else {FusionMode::Sflp}; Some(Lsm6dsv16xI2c::open(&c.dev,c.addr,mode,c.lever_arm,c.g_filter_k,c.accel_trust_g).map_err(|e| IoError::Bus(format!("open LSM6DSV16X on {}: {e}",c.dev)))?) }, None=>None };
-        if let Some(i) = imu.as_mut() { i.set_calibration(calibration.mount, calibration.bias); }
+        let imu = match cfg {
+            Some(c)=>{
+                let profile=match std::fs::read(VISUAL_CALIBRATION_FILE) {
+                    Ok(bytes)=>serde_json::from_slice(&bytes).map_err(|e|IoError::Bus(e.to_string()))?,
+                    Err(e) if e.kind()==std::io::ErrorKind::NotFound=>serde_json::Value::Null,
+                    Err(e)=>return Err(IoError::Bus(e.to_string())),
+                };
+                let cal=Calibration::from_profile(&profile,&c.model).map_err(|e|IoError::Bus(e.to_string()))?;
+                Some(Reader::start(c,cal).map_err(|e|IoError::Bus(e.to_string()))?)
+            },None=>None
+        };
         Ok(Self { cal_zero:calibration.zero, cal_sign:calibration.sign, port: serial, imu, last_imu: ImuData::default(), imu_misses:(0,0), kd:0, enable_gain:None, armed:false, limits, gain_profile, turn_offsets:[0;NUM_JOINTS] })
     }
     fn response(&mut self, req: &[u8], expected: usize) -> Result<Vec<u8>> {
@@ -413,7 +422,7 @@ impl RobotIo for ScsIo {
         }))
     }
 
-    fn read(&mut self)->Result<Sensors>{let mut s=Sensors::default();let mut blocks=[[0u8;15];15];for(i,&id)in JOINT_IDS.iter().enumerate(){let b=self.read_reg(id,POS,BLOCK_LEN as usize)?;Self::decode_cal(i,&b,&mut s,&self.cal_zero,&self.cal_sign,&self.limits)?;blocks[i].copy_from_slice(&b[..15]);}self.turn_offsets=std::array::from_fn(|i|{let raw=u16le(&blocks[i][..2]);signed_position(raw)-logical_position(raw,self.limits[i])});if let Some(i)=self.imu.as_mut(){match i.read_sample().map_err(|e|IoError::Bus(format!("LSM6DSV16X: {e}")))?{Some(v)=>{self.last_imu=v;self.imu_misses.1=0},None=>{self.imu_misses.0+=1;self.imu_misses.1+=1}}}s.imu=self.last_imu;crate::io_trace::feedback(&blocks);Ok(s)}
+    fn read(&mut self)->Result<Sensors>{let mut s=Sensors::default();let mut blocks=[[0u8;15];15];for(i,&id)in JOINT_IDS.iter().enumerate(){let b=self.read_reg(id,POS,BLOCK_LEN as usize)?;Self::decode_cal(i,&b,&mut s,&self.cal_zero,&self.cal_sign,&self.limits)?;blocks[i].copy_from_slice(&b[..15]);}self.turn_offsets=std::array::from_fn(|i|{let raw=u16le(&blocks[i][..2]);signed_position(raw)-logical_position(raw,self.limits[i])});if let Some(i)=self.imu.as_ref(){match i.read_sample(){Some(v)=>{self.last_imu=v;self.imu_misses.1=0},None=>{self.imu_misses.0+=1;self.imu_misses.1+=1}}}s.imu=self.last_imu;crate::io_trace::feedback(&blocks);Ok(s)}
     fn write(&mut self,t:&JointTargets)->Result<()> {
         if !self.armed {return Err(IoError::Bus("SCS output blocked until explicit safe arm".into()));}
         match self.sync_write_positions(&t.positions) {Ok(())=>Ok(()),Err(e)=>self.fail_closed(e)}

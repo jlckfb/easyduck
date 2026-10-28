@@ -1,2 +1,2 @@
-# Runtime: Python >=3.9, standard library only, including packaged IMU reader.
+# Runtime: Python >=3.11 (tomllib), standard library only, including packaged IMU reader.
 # Browser dependencies: see dependencies.lock.json (vendored three.js).

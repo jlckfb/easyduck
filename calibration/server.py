@@ -10,6 +10,7 @@ from pathlib import Path
 import signal
 import subprocess
 import sys
+if sys.version_info < (3,11):raise RuntimeError("标定服务需要 Python 3.11 或以上版本（标准库 tomllib）")
 import threading
 import time
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -18,6 +19,7 @@ from calibration_math import *
 from hardware import Bus,MockBus
 from servo_setup import ServoSetup
 from motion import MotionCoordinator,COUNT_DEG
+from imu import Reader,configuration,calibration as imu_calibration,set_calibration,body as imu_body,MAX_AGE
 
 ROOT=Path(__file__).resolve().parent
 MODEL_SHA=json.loads((ROOT/'static/model/manifest.json').read_text(encoding='utf-8'))['source_sha256']
@@ -77,6 +79,11 @@ class App:
         validate_profile(self.saved)
         self.profile=copy.deepcopy(self.saved); self.revision=0
         self.rows={}; self.imu=None; self.samples={}; self.history=[]; self.hz=0
+        self.imu_config=({'source':'i2c','model':'lsm6dsv16x','i2c_dev':'/dev/i2c-2','i2c_addr':107,
+                          'fusion':'sflp','lever_arm':[0,0,0],'g_filter_k':.05,'accel_trust_g':.3} if args.mock
+                         else configuration(getattr(args,'config','/etc/robot/robotd.toml')))
+        self.imu_status={'model':self.imu_config['model'],'connected':False,'capabilities':{},'error':'initializing'}
+        self.imu_key=None
         self.bus=MockBus(self.profile) if args.mock else Bus(args.port,
             speed_restore_path='/etc/robot/calibration_speed_restore.json', position_limits=self.saved['lim'])
         if args.mock and getattr(args,'mock_servo_id',None) is not None:
@@ -84,10 +91,9 @@ class App:
         self.id_setup=ServoSetup(self.bus,None if args.mock else getattr(args,'id_journal','/var/lib/easyduck/servo-id-changes.jsonl'))
         self.motion=MotionCoordinator(self.bus)
         self.reader=None
-        if not args.mock:
-            sys.path.insert(0,str(ROOT/'imu'))
-            from lsm6dsv16x_reader import Lsm6dsv16xReader
-            self.reader=Lsm6dsv16xReader(2,50,delta_quat=(1,0,0,0)); self.reader.start()
+        if not args.mock and self.imu_config['source']=='i2c':
+            self.reader=Reader(self.imu_config,imu_calibration(self.profile,self.imu_config['model']));self.reader.start()
+        elif not args.mock:self.imu_status['error']='标定台需要 source=i2c；当前配置为 bus'
         self.thread=threading.Thread(target=self.poll,daemon=True); self.thread.start()
 
     def read_row(self,sid):
@@ -105,6 +111,19 @@ class App:
                 'current_raw':current,'current_ma':current*6.5,'at':time.monotonic(),'error':None}
         except Exception as e:
             self.rows[sid]={'count':None,'torque':None,'at':time.monotonic(),'error':str(e)}
+
+    def update_imu(self):
+        self.reader.set_calibration(imu_calibration(self.profile,self.imu_config['model']))
+        snap=self.reader.snapshot();sample=snap.pop('sample');now=time.monotonic()
+        self.imu_status={'model':self.imu_config['model'],**snap,
+            'ages_ms':{k:round((now-v[1])*1000) for k,v in sample.items()}}
+        if not snap['error'] and all(k in sample and 0<=now-sample[k][1]<=MAX_AGE for k in ('quat','gyro')):
+            q,w=sample['quat'],sample['gyro'];key=(q[1],w[1])
+            self.imu={'quat':list(q[0]),'gyro':list(w[0]),'acc':list(sample['accel'][0]) if 'accel' in sample else None,
+                      'at':min(q[1],w[1]),'quat_at':q[1],'gyro_at':w[1]}
+            self.imu_key=key
+        else:self.imu=None
+        self.history=self.reader.history_snapshot()
 
     def poll(self):
         while not self.stop.is_set():
@@ -128,21 +147,18 @@ class App:
                 # Yield between transactions, even when a round overruns.
                 self.stop.wait(.001)
             with self.lock:
-                if self.reader:
-                    sample=self.reader.get_latest();age=time.perf_counter()-sample.timestamp_s
-                    if sample.valid and 0<=age<.3:
-                        self.imu={'quat':list(sample.quat),'gyro':list(sample.gyro),'acc':list(sample.acc),'at':time.monotonic()}
-                        self.history.append(copy.deepcopy(self.imu));self.history=self.history[-160:]
-                    else:self.imu=None
+                if self.reader:self.update_imu()
                 elif self.args.mock:
                     self.imu={'quat':list(DEFAULT_MOUNT),'gyro':[0,0,0],'acc':[1,0,0],'at':time.monotonic()}
                     self.history.append(copy.deepcopy(self.imu));self.history=self.history[-160:]
+                    self.imu_status={'model':'lsm6dsv16x','connected':True,'capabilities':{'orientation':True,'gyro':True,'accel':True},'error':None,'ages_ms':{'quat':0,'gyro':0,'accel':0}}
             elapsed=time.monotonic()-start
             self.hz=1/max(.06,elapsed)
             self.stop.wait(max(.001,.06-elapsed))
 
     def state(self):
         with self.lock:
+            if self.reader:self.update_imu()
             now=time.monotonic(); rows=[]; aligned=reference_aligned(self.profile)
             for i,sid in enumerate(IDS):
                 k=str(sid); r=copy.deepcopy(self.rows.get(sid,{})); age=now-r.pop('at',0)
@@ -150,14 +166,21 @@ class App:
                 r.update(id=sid,name=NAMES[i],label=LABELS[i],age_ms=round(age*1000),
                          angle=None if not aligned or r.get('count') is None else angle(HOME[i],r['count'],self.profile['zero'][k],self.profile['sign'][k]))
                 rows.append(r)
-            imu=None
-            if self.imu and now-self.imu['at']<.3:
-                imu=copy.deepcopy(self.imu); cfg=self.profile['imu']
-                imu['body_quat']=norm(mul(imu['quat'],inv(cfg['mount'])))
-                imu['gravity']=gravity(imu['body_quat'])
-                imu['body_gyro']=rotate(cfg['mount'],[imu['gyro'][i]-cfg['gyro_bias'][i] for i in range(3)])
+            imu=None;cfg=imu_calibration(self.profile,self.imu_config['model'])
+            if self.imu and now-self.imu['at']<=MAX_AGE:
+                imu=copy.deepcopy(self.imu)
+                sample={k:(imu[key],imu.get(k+'_at',imu['at'])) for k,key in (('quat','quat'),('gyro','gyro'))}
+                transformed=imu_body(sample,cfg,now)
+                if transformed:imu.update(transformed)
                 imu['age_ms']=round((now-imu.pop('at'))*1000)
-            return {'rows':rows,'imu':imu,'profile':copy.deepcopy(self.profile),'revision':self.revision,'hz':round(self.hz,1),
+            status=copy.deepcopy(self.imu_status);status['calibration_valid']=cfg.get('mount_valid',True)
+            if self.reader:
+                snap=self.reader.snapshot();status.update(connected=snap['connected'],error=snap['error'],capabilities=snap['capabilities'])
+                status['ages_ms']={k:round((now-v[1])*1000) for k,v in snap['sample'].items()}
+            status['fresh']=imu is not None;status['fusion']=self.imu_config['fusion']
+            status['valid']={k:age is not None and 0<=age<=MAX_AGE*1000 for k,age in ((k,status.get('ages_ms',{}).get(k)) for k in ('quat','gyro','accel'))}
+            if self.reader:status['valid']={k:k in snap['sample'] and 0<=now-snap['sample'][k][1]<=MAX_AGE for k in ('quat','gyro','accel')}
+            return {'rows':rows,'imu':imu,'imu_status':status,'profile':copy.deepcopy(self.profile),'revision':self.revision,'hz':round(self.hz,1),
                     'mock':self.args.mock,'poses':copy.deepcopy(self.samples),'dirty':self.profile!=self.saved,
                     'runtime_support':runtime_support(self.args.robotd),
                     'profile_path':self.args.profile,'home':dict(zip(NAMES,HOME)),
@@ -449,8 +472,9 @@ class App:
                         ('' if runtime['supported'] else '注意：当前robotd不读网页标定。'),'command':cmd,'runtime_support':runtime,
                         'warning':not runtime['supported']}
             if op in ('pose','bias'):
+                if self.reader:self.update_imu()
                 if self.motion.job: raise ValueError('请先停止实物运动，再采集IMU')
-                if not self.imu or time.monotonic()-self.imu['at']>.3: raise ValueError('IMU没有新鲜反馈，不能采集')
+                if not self.imu or time.monotonic()-self.imu['at']>MAX_AGE: raise ValueError('IMU没有新鲜反馈，不能采集')
                 h=[v for v in self.history if time.monotonic()-v['at']<2]
                 if len(h)<20 or h[-1]['at']-h[0]['at']<1: raise ValueError('请保持静止至少2秒再采集')
                 avg=[sum(v['gyro'][i] for v in h)/len(h) for i in range(3)]
@@ -459,7 +483,7 @@ class App:
                 gs=[gravity(v['quat']) for v in h]; g=norm([sum(v[i] for v in gs) for i in range(3)])
                 if max(math.acos(max(-1,min(1,dot(g,v)))) for v in gs)>.04: raise ValueError('姿态未保持稳定，请静止2秒')
                 if op=='bias':
-                    self.profile['imu']['gyro_bias']=avg; self.revision+=1
+                    set_calibration(self.profile,self.imu_config['model'],gyro_bias=avg); self.revision+=1
                     return {'message':'静止偏置已采集到草稿，请检查后保存','bias':avg}
                 name=d['pose']
                 if name not in POSES: raise ValueError('未知姿态')
@@ -468,7 +492,7 @@ class App:
             if op=='solve':
                 if self.motion.job: raise ValueError('请先停止实物运动，再计算安装方向')
                 q,residual=solve_mount(self.samples)
-                self.profile['imu']['mount']=q; self.revision+=1
+                set_calibration(self.profile,self.imu_config['model'],mount=q,mount_valid=True); self.revision+=1
                 return {'message':'安装方向已算出并预览，请倾斜核对后保存','residual_deg':residual,'mount':q}
             raise ValueError('未知操作')
 
@@ -517,6 +541,7 @@ class Handler(SimpleHTTPRequestHandler):
 def main():
     p=argparse.ArgumentParser(); p.add_argument('--port',default='/dev/ttyS3'); p.add_argument('--http-port',type=int,default=8766)
     p.add_argument('--bind',default='0.0.0.0'); p.add_argument('--baseline',default='/etc/robot/zero_pos.json')
+    p.add_argument('--config',default='/etc/robot/robotd.toml',help='same hardware configuration as robotd')
     p.add_argument('--profile',default='/etc/robot/visual_calibration.json')
     p.add_argument('--runtime-marker',default='/etc/robot/visual-calibration-runtime-v1'); p.add_argument('--mock',action='store_true')
     p.add_argument('--mock-servo-id',type=int,choices=range(254),help='single-servo offline preview (requires --mock)')

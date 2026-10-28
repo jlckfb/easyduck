@@ -25,3 +25,10 @@ pub use model::{
 };
 pub use obs::{ACTION_LEN, Command, OBS_LEN, Observation};
 pub use protection::{Guard, Protection, ProtectionConfig};
+
+#[cfg(target_os = "linux")]
+pub mod imu_driver;
+#[cfg(target_os = "linux")]
+mod imu_transport;
+#[cfg(target_os = "linux")]
+pub mod imu_bno085;

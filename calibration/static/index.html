@@ -31,7 +31,7 @@
 <details class="limits"><summary>活动范围与首次安装</summary><p id="limitStatus"></p><div class="fields"><label>计数下限<input id="min" type="number" min="0" max="4095"></label><label>计数上限<input id="max" type="number" min="0" max="4095"></label></div><div class="actions"><button id="captureMin">当前位置记下限</button><button id="captureMax">当前位置记上限</button><button id="confirmLimits">确认此关节范围</button></div><button id="testLimits">驱动检查范围：上限 → 下限 → 中间</button><hr><b>仅首次安装使用</b><p>实际位置跨零时可出现负数。若工作行程靠近编码器零点，先断力并手动摆到正确安装中位，再设置硬件中位。该操作永久写入舵机。</p><div class="actions"><button id="centerServo" class="danger">设置安装中位（永久）</button><button id="resetLimits">清除继承的旧范围</button></div><label>单圈计数（配置使用）<input id="raw" readonly></label></details>
 </section></aside>
 <section class="imu-workspace"><section class="imu"><div class="sectionTitle"><h2>IMU 身体姿态</h2><label><input type="checkbox" id="followImu" checked> 身体跟随倾斜</label></div>
-<div id="imuReadout">等待读数</div><p>摆正身体并静止2秒，再采集。前倾90°：头朝下；左倾90°：身体左侧朝下。至少采集站直和一个侧面，建议三项都采集。</p>
+<p id="imuDevice">读取 IMU 配置中</p><div id="imuReadout">等待读数</div><p>摆正身体并静止2秒，再采集。前倾90°：头朝下；左倾90°：身体左侧朝下。至少采集站直和一个侧面，建议三项都采集。</p>
 <div class="actions"><button data-pose="level">采集站直</button><button data-pose="front_down">采集前倾90°</button><button data-pose="left_down">采集左倾90°</button><button data-pose="front_up">采集后倾90°</button><button data-pose="right_down">采集右倾90°</button></div>
 <div id="poseStatus">尚未采集姿态</div><div class="actions"><button id="solve">计算安装方向并预览</button><button id="bias">采集静止偏置</button></div>
 <small>航向只显示相对变化。保存后的身体倾斜和转动方向仍需用实物对照。</small></section></section>

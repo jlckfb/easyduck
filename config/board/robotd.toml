@@ -36,6 +36,7 @@ greet = true
 [chorale]
 [media]
 [imu]
+model = "lsm6dsv16x"
 source = "i2c"
 i2c_dev = "/dev/i2c-2"
 i2c_addr = 107

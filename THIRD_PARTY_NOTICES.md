@@ -27,3 +27,5 @@
 - [标定网格来源与 SHA256](calibration/static/model/sources.json)
 
 本声明用于说明文件来源与授权范围，不为未明确授权的模型或素材补授许可。再分发这些文件前，应取得相应授权，并保留适用的版权及许可文本。
+
+IMU 接口整理：保留 LSM Python 文件原 GPL-3.0-or-later 署名；BNO085 为依据 CEVA SH-2/SHTP 协议的独立实现。教程固定版本的 `imu_reader.py` 文件自身为 GPL-3.0-or-later（Marc Duclusaud），并非教程根目录的 MIT。参考链接与坐标边界见 [IMU 驱动说明](docs/imu-drivers.md)，未新增第三方依赖。
