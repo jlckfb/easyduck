@@ -132,6 +132,7 @@ pub struct Sound {
     /// The wheee rider loops while this is true. Shared with the writer thread; clearing
     /// it *without* killing the child is what makes the end segment play.
     wheee_held: Arc<AtomicBool>,
+    wheee_volume: Arc<AtomicU64>,
     /// What the ride is doing. Not a bool: a plain sound must not flip it, and "landing"
     /// (the end segment is being written) has to be told apart from both "riding" and
     /// "off", or the trigger restarts a ride that is still finishing.
@@ -156,6 +157,7 @@ impl Sound {
             device,
             child: None,
             wheee_held: Arc::new(AtomicBool::new(false)),
+            wheee_volume: Arc::new(AtomicU64::new(1.0f64.to_bits())),
             ride: Ride::Off,
             warned_missing: false,
             live: None,
@@ -476,6 +478,10 @@ impl Sound {
     /// The ride, level-driven: the loop calls this every tick with what the wheee hold
     /// currently says. The rising edge starts it; the two ways of stopping are different
     /// sounds, which is the whole point of [`WheeeHold`] carrying three states.
+    pub fn set_wheee_volume(&self, volume: f64) {
+        self.wheee_volume.store(volume.clamp(0.0,1.0).to_bits(), Ordering::Relaxed);
+    }
+
     pub fn wheee(&mut self, hold: WheeeHold) {
         // Singing owns the PCM until it ends.
         if self.ride == Ride::Singing {
@@ -569,6 +575,7 @@ impl Sound {
         self.ride = Ride::Riding;
         self.wheee_held.store(true, Ordering::Relaxed);
         let held = self.wheee_held.clone();
+        let volume = self.wheee_volume.clone();
 
         std::thread::Builder::new()
             .name("wheee".into())
@@ -584,27 +591,30 @@ impl Sound {
                     libc::sigaddset(&mut set, libc::SIGPIPE);
                     libc::pthread_sigmask(libc::SIG_BLOCK, &set, std::ptr::null_mut());
                 }
-                // Pace writes to stay only ~250 ms ahead of playback — otherwise the pipe
+                // Pace writes to stay only ~30 ms ahead of playback — otherwise the pipe
                 // queues ~0.7 s of loop audio and the end starts that late after release.
-                const CHUNK: usize = 8192;
+                let chunk_size = (rate as usize / 100).max(1) * 2;
+                let mut gain = f64::from_bits(volume.load(Ordering::Relaxed));
                 let bytes_per_sec = f64::from(rate) * 2.0;
                 let t0 = Instant::now();
                 let mut sent = 0usize;
                 let mut send = |stdin: &mut std::process::ChildStdin, chunk: &[u8]| -> bool {
                     let ahead = sent as f64 / bytes_per_sec - t0.elapsed().as_secs_f64();
-                    if ahead > 0.25 {
-                        std::thread::sleep(Duration::from_secs_f64(ahead - 0.25));
+                    if ahead > 0.03 {
+                        std::thread::sleep(Duration::from_secs_f64(ahead - 0.03));
                     }
                     sent += chunk.len();
-                    stdin.write_all(chunk).is_ok()
+                    let target = f64::from_bits(volume.load(Ordering::Relaxed));
+                    let pcm = scale_wheee_pcm(chunk, &mut gain, target);
+                    stdin.write_all(&pcm).is_ok()
                 };
-                for chunk in start_pcm.chunks(CHUNK) {
+                for chunk in start_pcm.chunks(chunk_size) {
                     if !send(&mut stdin, chunk) {
                         return;
                     }
                 }
                 'ride: while held.load(Ordering::Relaxed) {
-                    for chunk in loop_pcm.chunks(CHUNK) {
+                    for chunk in loop_pcm.chunks(chunk_size) {
                         if !send(&mut stdin, chunk) {
                             break 'ride;
                         }
@@ -612,7 +622,7 @@ impl Sound {
                 }
                 // Out of the loop with the pipe still open: the hold decayed and
                 // `land_ride` cleared the flag without killing us. Play the ride out.
-                for chunk in end_pcm.chunks(CHUNK) {
+                for chunk in end_pcm.chunks(chunk_size) {
                     if !send(&mut stdin, chunk) {
                         return;
                     }
@@ -745,5 +755,32 @@ mod tests {
         assert_eq!(sound.ride, Ride::Off);
         assert!(!sound.wheee_held.load(Ordering::Relaxed));
         std::fs::remove_dir_all(&dir).ok();
+    }
+}
+
+/// Interpolate gain within each audio block to avoid clicks at control updates.
+fn scale_wheee_pcm(pcm: &[u8], gain: &mut f64, target: f64) -> Vec<u8> {
+    let target = target.clamp(0.0,1.0);
+    let step = (target-*gain)/(pcm.len()/2).max(1) as f64;
+    let mut out=Vec::with_capacity(pcm.len());
+    for bytes in pcm.chunks_exact(2) {
+        *gain += step;
+        let sample=(f64::from(i16::from_le_bytes([bytes[0],bytes[1]]))* *gain).round() as i16;
+        out.extend_from_slice(&sample.to_le_bytes());
+    }
+    *gain=target;
+    out
+}
+#[cfg(test)]
+mod web_volume_tests {
+    use super::*;
+    #[test]
+    fn wheee_pcm_gain_ramps_and_full_volume_keeps_samples() {
+        let pcm: Vec<u8>=[1000i16,-1000,1000,-1000].iter().flat_map(|s|s.to_le_bytes()).collect();
+        let mut gain=1.0;assert_eq!(scale_wheee_pcm(&pcm,&mut gain,1.0),pcm);
+        gain=0.0;let out=scale_wheee_pcm(&pcm,&mut gain,1.0);
+        let samples:Vec<i16>=out.chunks_exact(2).map(|s|i16::from_le_bytes([s[0],s[1]])).collect();
+        assert_eq!(samples,vec![250,-500,750,-1000]);
+        let out=scale_wheee_pcm(&pcm,&mut gain,0.0);assert_eq!(&out[6..],&[0,0]);
     }
 }

@@ -998,6 +998,7 @@ pub mod test_support {
             }),
             Call::RobotMouth(MouthParams { open: 0.5 }),
             Call::RobotSound(SoundParams {
+                volume: None,
                 tag: SoundTag::Chirp,
                 hold: None,
             }),
@@ -1381,6 +1382,9 @@ impl SoundTag {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SoundParams {
+    /// Optional PCM volume percentage; omitted keeps the original gamepad sound.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub volume: Option<u8>,
     pub tag: SoundTag,
     /// Only meaningful for [`SoundTag::Wheee`]: `Some(true)` starts/keeps the ride,
     /// `Some(false)` releases it. The hold decays on its own if the trues stop arriving,

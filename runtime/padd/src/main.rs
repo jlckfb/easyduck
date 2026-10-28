@@ -535,17 +535,20 @@ fn main() -> std::process::ExitCode {
         let mut sound_calls: Vec<proto::SoundParams> = Vec::new();
         if prev_rt < SOUND_THRESHOLD && rt >= SOUND_THRESHOLD {
             sound_calls.push(proto::SoundParams {
+                volume: None,
                 tag: proto::SoundTag::Chirp,
                 hold: None,
             });
         }
         if lt >= SOUND_THRESHOLD {
             sound_calls.push(proto::SoundParams {
+                volume: None,
                 tag: proto::SoundTag::Wheee,
                 hold: Some(true),
             });
         } else if prev_lt >= SOUND_THRESHOLD {
             sound_calls.push(proto::SoundParams {
+                volume: None,
                 tag: proto::SoundTag::Wheee,
                 hold: Some(false),
             });

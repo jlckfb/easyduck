@@ -206,6 +206,7 @@ pub struct Intents {
     /// The wheee hold, as a stamped level: `padd` re-notifies while the trigger is down,
     /// and the loop reads value + age so a dead client's ride decays instead of looping.
     wheee: ArcSwap<Stamped<bool>>,
+    wheee_volume: std::sync::atomic::AtomicU64,
 }
 
 /// What a client asked for, once.
@@ -273,6 +274,7 @@ impl Intents {
             shutdown: AtomicBool::new(false),
             mode_switch: AtomicU8::new(MODE_NONE),
             sounds: std::sync::atomic::AtomicU32::new(0),
+            wheee_volume: std::sync::atomic::AtomicU64::new(1.0f64.to_bits()),
             wheee: ArcSwap::from_pointee(Stamped {
                 value: false,
                 at_us: 0,
@@ -344,6 +346,7 @@ impl Intents {
     pub fn request_sound(&self, params: duck_ipc_proto::SoundParams) {
         use duck_ipc_proto::SoundTag;
         if params.tag == SoundTag::Wheee {
+            self.wheee_volume.store((f64::from(params.volume.unwrap_or(100).min(100))/100.0).to_bits(), Ordering::Relaxed);
             self.wheee.store(Arc::new(Stamped {
                 value: params.hold.unwrap_or(true),
                 at_us: self.now_us(),
@@ -374,6 +377,10 @@ impl Intents {
 
     /// The wheee hold as the loop consumes it — see [`WheeeHold`] for why "not held" is
     /// two answers and not one.
+    pub fn wheee_volume(&self) -> f64 {
+        f64::from_bits(self.wheee_volume.load(Ordering::Relaxed))
+    }
+
     pub fn wheee_hold(&self) -> WheeeHold {
         let stamp = self.wheee.load();
         if !stamp.value {
@@ -572,6 +579,7 @@ mod tests {
         );
 
         intents.request_sound(SoundParams {
+                volume: None,
             tag: SoundTag::Wheee,
             hold: Some(true),
         });
@@ -585,6 +593,7 @@ mod tests {
         );
 
         intents.request_sound(SoundParams {
+                volume: None,
             tag: SoundTag::Wheee,
             hold: Some(false),
         });

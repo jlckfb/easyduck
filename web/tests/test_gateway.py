@@ -37,7 +37,7 @@ class GatewayTests(unittest.TestCase):
     def claim(self):self.request('control',{'preference':'web'})
     def arm(self):
         self.claim();self.request('mode',{'mode':'policy'});self.rpc.calls.clear()
-    def command(self):return {'twist':[.2,-.1,.5],'head':[.1,.2,-.3,.4],'mouth':15}
+    def command(self):return {'twist':[.2,0,.5],'head':[.1,.2,-.3,.4],'mouth':15}
     def test_page_status_and_unclaimed_command_send_no_motion(self):
         self.gateway.status('browser')
         self.assertFalse(self.request('command',self.command())['forwarded'])
@@ -57,7 +57,7 @@ class GatewayTests(unittest.TestCase):
         self.assertEqual(self.rpc.calls[-1],('robot.enable',{'on':True,'toggle':False}))
     def test_command_units_and_head_order(self):
         self.arm();self.request('command',self.command())
-        self.assertEqual(self.rpc.calls,[('robot.xgo.command',{'twist':[.2,-.1,.5],'head':[.1,.2,-.3,.4],'mouth':.5})])
+        self.assertEqual(self.rpc.calls,[('robot.xgo.command',{'twist':[.2,0,.5],'head':[.1,.2,-.3,.4],'mouth':.5})])
     def test_late_command_after_off_is_not_forwarded(self):
         self.arm();self.request('mode',{'mode':'off'});self.rpc.calls.clear()
         self.assertFalse(self.request('command',self.command())['forwarded']);self.assertEqual(self.rpc.calls,[])
@@ -86,6 +86,73 @@ class GatewayTests(unittest.TestCase):
         self.assertIsNone(self.gateway.owner)
     def test_pick_routes_to_existing_skill(self):
         self.arm();self.request('pick',{});self.assertEqual(self.rpc.calls,[('robot.do',{'skill':'ground_pick'})])
+    def test_new_skills_use_existing_rpc_once(self):
+        self.arm()
+        self.gateway.snapshot.models = {'posture':'sit.onnx','roulade':'roll.onnx','jump':'jump.onnx','ground_pick':'pick.onnx'}
+        for skill in ('sit_toggle','ground_pick'):
+            self.request('skill', {'skill':skill})
+        self.assertEqual(self.rpc.calls,[('robot.do',{'skill':name}) for name in ('sit_toggle','ground_pick')])
+
+    def test_skill_rejects_missing_model_and_unknown_name(self):
+        self.arm()
+        for body in ({'skill':'sit_toggle'},{'skill':'unknown'},{'skill':[]},{'skill':'roulade','rpc':'robot.init'}):
+            with self.assertRaises(ApiError):self.request('skill',body)
+        self.assertEqual(self.rpc.calls,[])
+
+    def test_skill_cannot_bypass_control_owner(self):
+        self.gateway.snapshot.models={'posture':'sit.onnx'}
+        with self.assertRaises(ApiError):self.request('skill',{'skill':'sit_toggle'})
+        self.claim();self.rpc.control.update(owner='pad',ready=True)
+        with self.assertRaises(ApiError):self.request('skill',{'skill':'sit_toggle'})
+        self.assertEqual(self.rpc.calls,[])
+
+    def test_removed_web_skills_rejected_even_when_models_loaded(self):
+        self.arm();self.gateway.snapshot.models={'roulade':'roll.onnx','jump':'jump.onnx'}
+        for skill in ('roulade','jump'):
+            with self.assertRaises(ApiError):self.request('skill',{'skill':skill})
+        self.assertEqual(self.rpc.calls,[])
+
+    def test_vocal_follows_command_level_and_releases(self):
+        self.arm();cmd=self.command();cmd.update(mouth=12,vocal=.4)
+        self.request('command',cmd)
+        self.assertEqual(self.rpc.calls[-1],('robot.sound',{'tag':'wheee','hold':True,'volume':16}))
+        cmd.update(mouth=0,vocal=0);self.request('command',cmd)
+        self.assertEqual(self.rpc.calls[-1],('robot.sound',{'tag':'wheee','hold':False,'volume':0}))
+
+    def test_vocal_volume_grows_gently_without_changing_mouth_travel(self):
+        self.arm()
+        for level, volume in [(0.1,1),(0.25,6),(0.5,25),(0.75,56),(1,100),(0,0)]:
+            cmd=self.command();cmd.update(mouth=level*30,vocal=level)
+            self.request('command',cmd)
+            self.assertEqual(self.rpc.calls[-1],('robot.sound',{'tag':'wheee','hold':level>0,'volume':volume}))
+            self.assertAlmostEqual(self.rpc.calls[-2][1]['mouth'],level)
+
+    def test_vocal_cannot_bypass_web_owner(self):
+        cmd=self.command();cmd['vocal']=1
+        self.assertFalse(self.request('command',cmd)['forwarded']);self.assertEqual(self.rpc.calls,[])
+
+    def test_stale_vocal_stops_and_closes_mouth_without_torque_action(self):
+        self.arm();token=object();self.gateway.open_connection('browser',token)
+        cmd=self.command();cmd.update(mouth=30,vocal=1);self.request('command',cmd)
+        self.rpc.calls.clear();self.now+=.3;self.gateway.connection_alive('browser',token)
+        self.assertEqual(self.rpc.calls[0],('robot.sound',{'tag':'wheee','hold':False,'volume':0}))
+        self.assertEqual(self.rpc.calls[1][1]['mouth'],0)
+        self.assertFalse(any(c[0] in ('robot.enable','robot.init','robot.relax') for c in self.rpc.calls))
+
+    def test_invalid_vocal_and_strafe_rejected_before_commands(self):
+        self.arm()
+        for value in (-.1,1.1,True,float('nan')):
+            cmd=self.command();cmd['vocal']=value
+            with self.assertRaises(ApiError):self.request('command',cmd)
+        cmd=self.command();cmd['twist'][1]=.1
+        with self.assertRaises(ApiError):self.request('command',cmd)
+        self.assertEqual(self.rpc.calls,[])
+
+    def test_posture_state_reports_actual_model(self):
+        self.gateway.snapshot.models={'posture':'sit.onnx'}
+        self.gateway.snapshot.update({'policy':'xgo_sit'})
+        self.assertEqual(self.gateway.status('browser')['active_model'],'sit.onnx')
+
     def test_invalid_values_rejected_before_motion(self):
         self.arm()
         for value in [float('nan'),float('inf'),.5,True,'0.2']:

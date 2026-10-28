@@ -375,6 +375,7 @@ fn run_quack(socket: &Path) -> Result<(), Failure> {
     let mut client = Client::connect_to("robotd", socket)?;
     client.hello()?;
     let result = result_of(client.call(&proto::Call::RobotSound(proto::SoundParams {
+                volume: None,
         tag: proto::SoundTag::Chirp,
         hold: None,
     }))?)?;

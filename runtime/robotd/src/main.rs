@@ -1593,6 +1593,7 @@ async fn control_loop<T: RobotIo>(
                 intents.wheee_hold()
             };
             voice.settle_singing();
+            voice.set_wheee_volume(intents.wheee_volume());
             voice.wheee(hold);
             for tag in intents.take_sounds() {
                 voice.play(tag.as_str(), false);
@@ -3671,6 +3672,7 @@ mod tests {
         let id = || proto::Id::Number(1);
         let quack = || {
             proto::Call::RobotSound(proto::SoundParams {
+                volume: None,
                 tag: proto::SoundTag::Chirp,
                 hold: None,
             })

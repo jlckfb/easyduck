@@ -208,6 +208,7 @@ class Gateway:
         self.command = [0.0] * 3
         self.head = [0.0] * 4
         self.mouth = 0.0
+        self.vocal = 0.0
         self.last_error, self.last_request = '', None
         self.session, self.session_at = None, 0.0
         self.control = {}
@@ -232,11 +233,18 @@ class Gateway:
                 return False
             if (self.owner == client and self.control.get('owner') == 'web'
                     and self.control.get('ready') and self.clock()-self.heartbeat > .2):
+                self.stop_vocal()
                 # Preserve policy/recovery, but never replay a stale walking velocity.
                 self.rpc.call('robot.xgo.command',
                     {'twist':[0.0]*3, 'head':self.head, 'mouth':self.mouth/30})
                 self.command = [0.0]*3
             return True
+
+    def stop_vocal(self):
+        if self.vocal:
+            self.rpc.call("robot.sound", {"tag":"wheee", "hold":False, "volume":0})
+            self.vocal = 0.0
+            self.mouth = 0.0
 
     def close_connection(self, client, token):
         with self.lock:
@@ -256,6 +264,7 @@ class Gateway:
 
     def update_control(self, value):
         if self.generation is not None and value.get('generation') != self.generation:
+            self.vocal = 0.0
             self.owner = None
             self.mode = 'robotd'
             self.command, self.head, self.mouth = [0.0]*3, [0.0]*4, 0.0
@@ -292,6 +301,7 @@ class Gateway:
         with self.lock:
             if route == 'release':
                 if client == self.session:
+                    self.stop_vocal()
                     try:
                         self.update_control(self.rpc.call('robot.control.heartbeat',
                             {'source':'web','connected':False,'neutral':True}))
@@ -309,6 +319,8 @@ class Gateway:
                     raise ApiError('未知控制入口')
                 if not self.presence(client, self.neutral, claim=preference=='web'):
                     raise ApiError('另一控制页面在线',409)
+                if preference == 'auto':
+                    self.stop_vocal()
                 self.preference = preference
                 try:
                     return self.update_control(self.rpc.call('robot.control.select', {'preference':preference}))
@@ -319,28 +331,37 @@ class Gateway:
                     self.control = self.local_control()
                     return self.control
             if route == 'mode' and body == {'mode':'off'}:
+                self.stop_vocal()
                 result = self.rpc.call('robot.relax')
                 self.owner, self.mode = None, 'off'
                 return {'operation':'off','result':result}
             if route == 'command':
-                if set(body) != {'twist','head','mouth'}:
+                if set(body) not in ({'twist','head','mouth'}, {'twist','head','mouth','vocal'}):
                     raise ApiError('指令字段不正确')
                 twist = vector(body['twist'], [.4,.3,1])
+                if twist[1] != 0:
+                    raise ApiError('网页只支持前后行走和左右转向')
+                vocal = vector([body.get('vocal',0)], [1])[0]
+                if vocal < 0:
+                    raise ApiError('鸣叫强度范围为0～1')
                 head = vector(body['head'], [1]*4)
                 mouth = vector([body['mouth']], [30])[0]
                 if mouth < 0:
                     raise ApiError('嘴部角度范围为0～30')
-                neutral = all(abs(x)<1e-6 for x in twist+head+[mouth])
+                neutral = all(abs(x)<1e-6 for x in twist+head+[mouth,vocal])
                 if not self.presence(client,neutral):
                     return {'ok':True,'forwarded':False}
                 if self.control.get('owner') != 'web' or not self.control.get('ready') or self.owner != client:
                     return {'ok':True,'forwarded':False}
                 self.rpc.call('robot.xgo.command', {'twist':twist,'head':head,'mouth':mouth/30})
+                if vocal > 0 or self.vocal > 0:
+                    self.rpc.call("robot.sound", {"tag":"wheee", "hold":vocal>0, "volume":round(vocal*vocal*100)})
+                self.vocal = vocal
                 self.command, self.head, self.mouth = twist,head,mouth
                 self.heartbeat = self.clock()
                 self.last_error = ''
                 return {'ok':True,'forwarded':True}
-            if route not in ('mode','pick'):
+            if route not in ('mode','pick','skill'):
                 raise ApiError('接口不存在',404)
             if self.session != client:
                 raise ApiError('请先在此页面接管控制',409)
@@ -366,6 +387,16 @@ class Gateway:
                 self.last_request = {'operation':mode,'result':result}
                 self.last_error = ''
                 return self.last_request
+            if route == 'skill':
+                allowed = {'sit_toggle':'posture', 'ground_pick':'ground_pick'}
+                skill = body.get('skill')
+                if set(body) != {'skill'} or not isinstance(skill, str) or skill not in allowed:
+                    raise ApiError('未知动作')
+                if not self.snapshot.view()['models'].get(allowed[skill]):
+                    raise ApiError('当前未加载这个动作的模型', 409)
+                result = self.rpc.call('robot.do', {'skill':skill})
+                self.last_request = {'operation':skill, 'result':result}
+                return self.last_request
             if body:
                 raise ApiError('捡物不接受额外参数')
             result = self.rpc.call('robot.do', {'skill':'ground_pick'})
@@ -374,6 +405,7 @@ class Gateway:
     def expire(self):
         with self.lock:
             if self.session and self.clock()-self.session_at > 1:
+                self.stop_vocal()
                 self.session, self.owner = None,None
                 self.connection_token = None
                 self.mode = 'robotd'
@@ -412,8 +444,11 @@ class Gateway:
                     'targets': [math.degrees(x) for x in state.get('targets', [])],
                     'gyro': state.get('safety', {}).get('base_ang_vel'), 'gravity': gravity,
                     'acc': None, 'recovery': {'active': policy in ('xgo_getup', 'xgo_default_pose'), 'phase': policy, 'angle_deg': angle},
-                    'pick': {'active': policy == 'xgo_pick'}, 'roulade': {'active': False},
-                    'active_model': models.get('ground_pick') if policy == 'xgo_pick' else
+                    'pick': {'active': policy == 'xgo_pick'}, 'roulade': {'active': policy == 'xgo_roulade'},
+                    'active_model': models.get('posture') if policy in ('xgo_sit', 'xgo_rise') else
+                                    models.get('roulade') if policy == 'xgo_roulade' else
+                                    models.get('jump') if policy == 'xgo_jump' else
+                                    models.get('ground_pick') if policy == 'xgo_pick' else
                                     models.get('sitstand') if policy in ('xgo_getup','xgo_default_pose') else
                                     models.get('walk') if policy == 'xgo_walk' else
                                     models.get('stand') if policy == 'stand' else None,
@@ -580,7 +615,7 @@ def make_handler(gateway):
                     raise ApiError('请求体长度不正确', 413)
                 client = self.headers.get('X-Control-Id','')
                 path = urlsplit(self.path).path
-                if path not in ('/api/mode', '/api/command', '/api/pick', '/api/control', '/api/release'):
+                if path not in ('/api/mode', '/api/command', '/api/pick', '/api/skill', '/api/control', '/api/release'):
                     raise ApiError('接口不存在', 404)
                 body = json.loads(self.rfile.read(size))
                 result = gateway.request(path[5:], body, client)
