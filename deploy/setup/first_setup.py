@@ -118,8 +118,6 @@ class App:
             try:
                 if action == 'navigation':
                     result = self.navigation.switch(**body)
-                    wifi = self.backend.wifi_status()
-                    result['host'] = wifi['ip'] if wifi['connected'] else None
                 else:
                     with self.backend.operation(action.split('/')[0]):
                         if action == 'wifi/scan': result = self.backend.scan_wifi()

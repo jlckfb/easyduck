@@ -169,8 +169,8 @@ function applyAccess(data) {
   const controlTarget = new URL('/navigate?target=control&source=setup', location.origin);
   const wirelessReady = wifi.connected && /^\d{1,3}(?:\.\d{1,3}){3}$/.test(wifi.ip);
   if (wirelessReady) {
-    controlTarget.hostname = wifi.ip;
-    const link = textNode('a', '通过 Wi-Fi 控制机器人 ↗', 'access-link'); link.href = controlTarget.href;
+    const wifiTarget = new URL(controlTarget.href);wifiTarget.hostname = wifi.ip;
+    const link = textNode('a', '通过 Wi-Fi 控制机器人 ↗', 'access-link'); link.href = wifiTarget.href;
     const settings = textNode('a', 'http://' + wifi.ip + (location.port && location.port !== '80' ? ':' + location.port : '') + '/', 'access-link'); settings.href = settings.textContent;
     access.append(link, settings, textNode('div', 'ssh ' + data.login_user + '@' + wifi.ip, 'access-address'));
   } else access.append(textNode('p', '连接 Wi-Fi 后，这里会显示无线控制网页和 SSH 地址。', 'note'));
@@ -179,8 +179,8 @@ function applyAccess(data) {
   const calibrationTarget = new URL(controlTarget.href); calibrationTarget.searchParams.set('target','calibration');
   calibration.href = calibrationTarget.href; calibration.hidden = false;
   const idTarget=new URL(calibrationTarget.href);idTarget.searchParams.set('target','servo_setup');$('open-servo-id').href=idTarget.href;$('open-servo-id').hidden=false;
-  calibration.textContent = wirelessReady ? '通过 Wi-Fi 打开标定页 ↗' : '打开标定页 ↗';
-  control.textContent = wirelessReady ? '通过 Wi-Fi 打开控制页 ↗' : '打开当前网络的控制页 ↗';
+  calibration.textContent = '打开标定页 ↗';
+  control.textContent = '打开当前网络的控制页 ↗';
   const system = $('system-link'); system.hidden = !data.system_url; if (data.system_url) system.href = data.system_url;
 }
 
