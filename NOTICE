@@ -1,0 +1,72 @@
+Easyduck - upstream attribution and redistribution notice
+
+This file records provenance. It does not grant rights to third-party code,
+trained weights, designs or other material whose licensing is unresolved.
+The repository's Apache-2.0 LICENSE does not override third-party terms.
+
+Pollen Robotics / Microduck
+  https://github.com/pollen-robotics/microduck
+  Source revision: e63db682baeb90cb78c0032dff1c4b9e0b8b64df
+  License: Apache-2.0; see LICENSE.
+  Easyduck retains and modifies the Rust robot control/runtime, IPC,
+  parameter, gamepad, command-line, kinematics and sound synthesis modules.
+  Modifications include TaishanPi Linux interfaces, HD1910 communication,
+  IMU integration, deployment configuration and robot behavior integration.
+  The duck.bin mesh and duck_strut.mid score match this upstream revision;
+  wistful.duckscore matches after line-ending normalization.
+
+Luwu Dynamics / XGO-Duck runtime
+  https://github.com/LuwuDynamics/xgoduck_runtime_arduino
+  Source revision: 8cdbbd84710d856581982c9eaf0d5e2970666232
+  No explicit repository license was found in this pinned revision.
+  Easyduck ports action sequencing into runtime/robotd/src/xgo.rs, adapts
+  browser control code including web/assets/app.js, and references the
+  upstream servo setup/calibration workflows. Four ONNX policies derive
+  from this revision; see models/manifest.json for hashes and adaptations.
+  Acknowledgment is not permission. Redistribution and licensing of these
+  contributions and trained weights require confirmation from the rights
+  holders; they are not relicensed here as Apache-2.0.
+
+Luwu Dynamics / XgoDuck RL; Pollen Robotics / Microduck RL
+  https://github.com/LuwuDynamics/xgoduck_rl
+  https://github.com/pollen-robotics/microduck_rl
+  XgoDuck RL reference revision: afd091be041caf5e6d4f44102c959e7571b82a37
+  The pinned XgoDuck RL repository includes an Apache-2.0 LICENSE.
+  The 15 calibration STL files match its xgoduck asset files. This does
+  not establish permission for separately distributed hardware drawings.
+  The locally trained posture model's provenance is in models/manifest.json.
+  Training source licensing does not by itself settle the rights to the
+  four pretrained weights obtained from the runtime repository above.
+
+Marc Duclusaud / LSM6DSV16X calibration reader
+  Copyright 2026 Marc Duclusaud
+  calibration/imu/lsm6dsv16x_reader.py: GPL-3.0-or-later.
+  See GPL-3.0-or-later.txt in the installed license directory (LICENSES/
+  in the source repository). Preserve this notice and the applicable
+  corresponding-source rights. The calibration server imports this
+  module; do not assume its combined distribution is Apache-only.
+
+three.js authors
+  Copyright 2010-2023 three.js authors
+  https://github.com/mrdoob/three.js
+  Revision 160, MIT. Includes OrbitControls and STLLoader.
+  Full notice: calibration/static/vendor/LICENSE-three.txt (source), or
+  /opt/robot/calibration/static/vendor/LICENSE-three.txt (installation).
+
+sbsWeb contributors
+  https://github.com/LaoGuaiGe/sbsWeb
+  Apache-2.0. Reference for setup/control page themes, cards and interaction.
+  TaishanPi application/networking logic is maintained in Easyduck.
+
+Other dependencies and system components
+  Rust dependency versions and license expressions: runtime/Cargo.lock and
+  deploy/dependencies.lock.json. These lists do not replace full copyright
+  and license texts. serialport 4.9.0 is MPL-2.0; unescaper offers MIT OR
+  GPL-3.0-only; unicode-ident also carries Unicode-3.0 conditions.
+  ONNX Runtime is an external library; its MIT and bundled third-party
+  notices must accompany applicable distributions.
+  Linux/kernel changes are subject to GPL-2.0; the distributed Debian
+  system also contains GPL/LGPL and other separately licensed packages.
+  Package notices are normally under /usr/share/doc/<package>/copyright.
+  This application notice is not a complete system-image license audit or
+  a substitute for corresponding source and other distribution duties.
