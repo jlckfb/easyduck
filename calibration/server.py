@@ -7,6 +7,11 @@ import json
 import math
 import os
 from pathlib import Path
+import sys as _network_sys
+_network_root = Path(__file__).resolve().parents[1]
+if not (_network_root / 'deploy/network_routes.py').is_file(): _network_root = _network_root.parent
+_network_sys.path.insert(0, str(_network_root))
+from deploy.network_routes import addresses as network_addresses, client_script as navigation_client
 import signal
 import subprocess
 import sys
@@ -560,7 +565,12 @@ class Handler(SimpleHTTPRequestHandler):
         self.send_header('Content-Length',str(len(b))); self.end_headers(); self.wfile.write(b)
     def do_GET(self):
         path=urlsplit(self.path).path
-        if path=='/api/state': self.reply(self.server.app.state())
+        if path=='/api/network-addresses': self.reply(network_addresses())
+        elif path=='/navigation-client.js':
+            data=navigation_client()
+            self.send_response(200); self.send_header('Content-Type','text/javascript; charset=utf-8')
+            self.send_header('Content-Length',str(len(data))); self.end_headers(); self.wfile.write(data)
+        elif path=='/api/state': self.reply(self.server.app.state())
         elif path in ('/','/index.html'):
             data=(ROOT/'static/index.html').read_bytes().replace(b'__SETUP_PORT__',str(int(os.environ.get('EASYDUCK_SETUP_PORT','80'))).encode())
             self.send_response(200); self.send_header('Content-Type','text/html; charset=utf-8')

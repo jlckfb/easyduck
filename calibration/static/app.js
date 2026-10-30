@@ -252,12 +252,12 @@ window.calibrationDebug=()=>({ready,meshCount:meshes.length,jointCount:hinges.si
 function navigationURL(target){
  const url=new URL('/navigate',location.href);url.port=document.querySelector('meta[name="setup-port"]').content;url.searchParams.set('target',target);url.searchParams.set('source','calibration');return url.href;
 }
-function navigateTo(target){
+async function navigateTo(target){
  if(!state||busy)return toast('请等待当前操作完成后再切换页面',true);
  if(formDirty||state.dirty)return toast('有未保存草稿：请先保存或撤销，再切换页面',true);
  if(state.motion?.active)return toast('请先停止实物运动',true);
  if(state.rows.some(row=>typeof row.torque!=='boolean'||row.error))return toast('部分舵机反馈异常，请确认反馈正常后再切换',true);
- location.assign(navigationURL(target));
+ try{location.assign(await window.easyduckNavigation(navigationURL(target)));}catch(error){toast(error.message,true);}
 }
 for(const [id,target] of [['nav-settings','setup'],['nav-control','control']]){
  const link=$(id);link.href=navigationURL(target);link.onclick=event=>{event.preventDefault();navigateTo(target);};

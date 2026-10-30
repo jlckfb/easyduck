@@ -52,6 +52,8 @@ def mapping(profile, binaries):
             raise ValueError('Model checksum mismatch: ' + name)
         result.append((source, Path('opt/robot/daemon/policies') / name))
 
+    for name in ('network_routes.py', 'navigation-client.js'):
+        result.append((ROOT / 'deploy' / name, Path('opt/robot/deploy') / name))
     result.append((ROOT / 'web/server.py', Path('opt/robot/xgoduck-web/server.py')))
     for name in ('first_setup.py', 'connections.py', 'navigation.py'):
         result.append((ROOT / 'deploy/setup' / name, Path('opt/robot/setup') / name))

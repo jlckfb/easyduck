@@ -10,6 +10,11 @@ import json
 import os
 import math
 from pathlib import Path
+import sys as _network_sys
+_network_root = Path(__file__).resolve().parents[1]
+if not (_network_root / 'deploy/network_routes.py').is_file(): _network_root = _network_root.parent
+_network_sys.path.insert(0, str(_network_root))
+from deploy.network_routes import addresses as network_addresses, client_script as navigation_client
 import signal
 import socket
 import subprocess
@@ -525,6 +530,10 @@ def make_handler(gateway):
 
         def do_GET(self):
             route = urlsplit(self.path).path
+            if route == '/api/network-addresses':
+                return self.reply(network_addresses())
+            if route == '/navigation-client.js':
+                return self.reply(navigation_client(), mime='text/javascript; charset=utf-8')
             if route == '/api/connection':
                 try:
                     return self.control_connection()

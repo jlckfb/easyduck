@@ -10,6 +10,11 @@ import html
 import json
 import os
 from pathlib import Path
+import sys as _network_sys
+_network_root = Path(__file__).resolve().parents[1]
+if not (_network_root / 'deploy/network_routes.py').is_file(): _network_root = _network_root.parent
+_network_sys.path.insert(0, str(_network_root))
+from deploy.network_routes import addresses as network_addresses, client_script as navigation_client
 import secrets
 import signal
 import threading
@@ -160,6 +165,8 @@ def make_handler(app):
             target = target if target in ('setup', 'control', 'calibration', 'servo_setup') else ''
             source = parse_qs(urlsplit(self.path).query).get('source', ['setup'])[0]
             source = source if source in ('setup', 'control', 'calibration') else 'setup'
+            if path == '/api/network-addresses': return self.send(200,network_addresses())
+            if path == '/navigation-client.js': return self.send(200,navigation_client(),'text/javascript; charset=utf-8')
             if path == '/navigate':
                 if not target: return self.send(400, {'ok':False,'message':'未知页面。'})
                 if not session: return self.redirect('/login?target='+target+'&source='+source)

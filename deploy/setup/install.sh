@@ -30,6 +30,7 @@ import re
 if not re.fullmatch(r'[a-zA-Z_][a-zA-Z0-9_.-]*[$]?',args.user):parser.error('Invalid login user')
 if not re.fullmatch(r'[0-9.]+',args.host):parser.error('Use an IPv4 bind address')
 entries=[(source/name,Path('opt/robot/setup')/name) for name in ('first_setup.py','connections.py','navigation.py')]
+entries.extend((source.parent/name,Path('opt/robot/deploy')/name) for name in ('network_routes.py','navigation-client.js'))
 entries.extend((p,Path('opt/robot/setup/static')/p.name) for p in sorted((source/'static').iterdir()) if p.is_file())
 for name in ('easyduck-setup.service','easyduck-gamepad-reconnect.service','easyduck-gamepad-reconnect.timer'):
     entries.append((source.parent/'systemd'/name,Path('etc/systemd/system')/name))

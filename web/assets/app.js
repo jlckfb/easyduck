@@ -167,5 +167,5 @@ function navigationURL(target){
 }
 for(const [id,target] of [['nav-settings','setup'],['nav-calibration','calibration']]){
  const link=$(id);link.href=navigationURL(target);
- link.onclick=async event=>{event.preventDefault();if(pageClosing)return;pageClosing=true;cancelCall();keys.clear();resetSticks.forEach(reset=>reset());updateMotion();await releasePage();controlSocket?.close();location.assign(link.href);};
+ link.onclick=async event=>{event.preventDefault();if(pageClosing)return;let destination;try{destination=await window.easyduckNavigation(link.href);}catch(error){showError(error);return;}pageClosing=true;cancelCall();keys.clear();resetSticks.forEach(reset=>reset());updateMotion();await releasePage();controlSocket?.close();location.assign(destination);};
 }
