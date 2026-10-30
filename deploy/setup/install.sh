@@ -21,11 +21,7 @@ if target==Path('/'):
         with socket.socket() as probe:
             try:probe.bind((args.host,args.port))
             except OSError:parser.error('Port is in use; choose --port or adjust the existing web service first')
-if not args.user:
-    try:
-        import pwd
-        args.user=pwd.getpwuid(1000).pw_name
-    except (ImportError,KeyError):args.user='root'
+if not args.user:args.user='lckfb'
 import re
 if not re.fullmatch(r'[a-zA-Z_][a-zA-Z0-9_.-]*[$]?',args.user):parser.error('Invalid login user')
 if not re.fullmatch(r'[0-9.]+',args.host):parser.error('Use an IPv4 bind address')

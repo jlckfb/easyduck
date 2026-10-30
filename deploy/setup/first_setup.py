@@ -26,11 +26,7 @@ from navigation import Navigator
 STATIC = Path(__file__).with_name('static')
 
 def default_user():
-    try:
-        import pwd
-        return pwd.getpwuid(1000).pw_name
-    except (ImportError, KeyError):
-        return 'root'
+    return 'lckfb'
 
 class Auth:
     def __init__(self, username):

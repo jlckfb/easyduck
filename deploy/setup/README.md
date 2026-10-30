@@ -23,7 +23,7 @@ sudo apt install python3 network-manager bluez libcrypt1
 sudo bash deploy/setup/install.sh --port 80 --user <系统用户名>
 ```
 
-省略 `--user` 时优先使用 UID 1000 的系统账号，否则使用 root。安装器保留已有 `/etc/easyduck/setup.env`，备份覆盖的文件并输出回退清单，然后启动网页和重连定时器。如果端口已被其他网页占用，请先协调原服务，或选择其他端口，例如 `--port 8081`。
+网页默认登录账号为 `lckfb`；系统账号由机器人 SDK 的 rootfs 安装入口创建。已有 `/etc/easyduck/setup.env` 中的显式账号设置优先。安装器保留已有 `/etc/easyduck/setup.env`，备份覆盖的文件并输出回退清单，然后启动网页和重连定时器。如果端口已被其他网页占用，请先协调原服务，或选择其他端口，例如 `--port 8081`。
 
 ```sh
 systemctl status easyduck-setup.service
