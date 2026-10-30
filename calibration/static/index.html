@@ -3,8 +3,8 @@
 <title>Easyduck · 标定台</title><link rel="icon" href="data:,"><link rel="stylesheet" href="style.css"><script defer src="appearance.js"></script>
 <script type="importmap">{"imports":{"three":"/vendor/three.module.js"}}</script></head><body>
 <div class="circuit" aria-hidden="true"><svg viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMid slice"><g fill="none" stroke="currentColor"><path d="M0 110H170L230 170H550L610 110H840M0 650H120L210 560V380L260 330H480M1600 210H1450L1380 280H1140L1070 350V500M1600 810H1390L1300 720H1000L950 770H760M400 1000V910L470 840V670M1200 0V90L1130 160H1000"/><path d="M0 130H162L222 190H540M1600 230H1458L1388 300H1150M1600 830H1380L1290 740H1010"/><circle cx="840" cy="110" r="5"/><circle cx="480" cy="330" r="5"/><circle cx="1070" cy="500" r="5"/><circle cx="760" cy="770" r="5"/></g></svg></div>
-<header><a class="brand" href="/"><span class="brand-mark">ed<span>·</span></span><span><b>EASYDUCK</b><small>CALIBRATION STUDIO</small></span></a><div class="header-status"><span class="status-dot"></span><span id="connection">正在连接</span></div><div class="actions safety"><button id="themeToggle" class="theme-button">☼ 浅色</button><button id="stopMotion">停止并保持</button><button id="offAll" class="danger">全部松力矩</button></div></header>
-<div class="app-shell"><aside class="sidebar"><div class="rail-label">工作流程 <span>WORKFLOW</span></div><div class="cal-tabs" role="tablist" aria-label="标定功能"><button id="tab-servo-id" role="tab" aria-selected="false"><span class="step-index">01</span><span><b>分配舵机 ID</b><small>首次装机 · 逐只编号</small></span></button><button id="tab-calibration" role="tab" aria-selected="true"><span class="step-index">02</span><span><b>关节标定</b><small>方向 · 零点 · 活动范围</small></span></button><button id="tab-imu" role="tab" aria-selected="false"><span class="step-index">03</span><span><b>IMU 标定</b><small>身体姿态 · 安装方向</small></span></button></div>
+<header><a class="brand" href="/"><span class="brand-mark">ed<span>·</span></span><span><b>EASYDUCK</b><small>CALIBRATION STUDIO</small></span></a><div class="header-status"><span class="status-dot"></span><span id="connection">正在连接</span></div><div class="actions safety"><button id="themeToggle" class="theme-button">☼ 浅色</button><button id="stopMotion">停止并保持</button><button id="onAll" title="全部舵机上力并保持当前位置">全部上力</button><button id="offAll" class="danger">全部松力矩</button></div></header>
+<div class="app-shell"><aside class="sidebar"><div class="rail-label">工作流程 <span>WORKFLOW</span></div><div class="cal-tabs" role="tablist" aria-label="标定功能"><button id="tab-servo-id" role="tab" aria-selected="false"><span class="step-index">选做</span><span><b>分配舵机 ID</b><small>新舵机选做 · 已编号跳过</small></span></button><button id="tab-calibration" role="tab" aria-selected="true"><span class="step-index">02</span><span><b>关节标定</b><small>方向 · 零点 · 活动范围</small></span></button><button id="tab-imu" role="tab" aria-selected="false"><span class="step-index">03</span><span><b>IMU 标定</b><small>身体姿态 · 安装方向</small></span></button></div>
 <section class="overview"><div class="rail-label">设备概览</div><div class="overview-row"><span>运行方式</span><b id="railMode">读取中</b></div><div class="overview-row"><span>在线关节</span><b id="railOnline">— / 15</b></div><div class="overview-row"><span>反馈频率</span><b id="rate">—</b></div><div class="overview-row"><span>当前关节</span><b id="railJoint">—</b></div></section>
 <div class="rail-note"><span>操作提示</span><p>准备 → 范围 → 方向。每次只显示当前操作，最后检查整机。</p></div><nav class="page-nav" aria-label="页面切换"><a id="nav-settings">↗ 连接设置</a><a id="nav-control">↗ 机器人控制</a></nav></aside>
 <div class="workspace"><div class="workspace-heading"><div><span class="eyebrow">ROBOT CONFIGURATION</span><h1><span class="joint-page-title">关节标定</span><span class="id-page-title">分配舵机 ID</span><span class="imu-page-title">IMU 标定</span></h1><p class="joint-page-title">选关节，完成三个步骤，再检查整机。</p><p class="id-page-title">为新安装的舵机分配地址，已编号舵机可以保留连接。</p><p class="imu-page-title">采集身体姿态，校准安装方向与静止偏置。</p></div><span class="workspace-tag">本地设备配置</span></div>
@@ -24,13 +24,14 @@
 <aside class="joint-workspace"><section id="editor">
 <div class="joint-picker-row"><select id="jointSelect" aria-label="选择关节"></select><button id="prevJoint" aria-label="上一个关节">‹</button><button id="nextJoint" aria-label="下一个关节">›</button><button id="selectedTorque">上力保持当前位置</button></div>
 <h2 id="selectedName" class="sr-only">当前关节</h2>
+<button id="homeSelected" class="full-button">当前关节回 HOME 并保持力矩</button>
 <div class="compact-readouts"><label>位置<input id="rawSigned" readonly></label><label>模型角度 °<input id="degrees" readonly></label></div>
 <div class="step-tabs" role="tablist" aria-label="当前关节标定步骤"><button role="tab" data-cal-step="0" aria-selected="true">1 准备</button><button role="tab" data-cal-step="1" aria-selected="false">2 范围</button><button role="tab" data-cal-step="2" aria-selected="false">3 方向</button></div>
 <section id="panelPrepare" class="cal-panel" role="tabpanel" aria-label="准备关节">
-<p>松开此关节，手动摆成 3D 参考站姿，再依次操作。</p>
-<div class="prepare-actions"><button id="prepareJoint" class="primary">① 清圈并清除旧范围</button><button id="centerServo" class="danger">② 设中位并记录 HOME</button></div>
+<p>新舵机先清圈、设中位，再记录 HOME。只微调站姿时，摆好后直接记录 HOME 并保存。</p>
+<div class="prepare-actions"><button id="prepareJoint" class="primary">清圈并清除旧范围</button><div class="center-home-actions"><button id="centerServo" class="danger">设为中位</button><button id="captureZero" class="primary">记录当前位置为 HOME</button></div></div>
 <small id="turnHint">等待读数</small>
-<details><summary>手动 HOME / 单独清理</summary><div class="actions"><button id="resetTurns">仅清圈</button><button id="resetLimits">仅清当前关节旧范围</button><button id="captureZero">仅记当前位置为 HOME</button></div><div class="fields"><label>HOME 计数<input id="zero" type="number" min="0" max="4095"></label><label>单圈位置<input id="raw" readonly></label></div></details>
+<details><summary>HOME 数值 / 单独清理</summary><div class="actions"><button id="resetTurns">仅清圈</button><button id="resetLimits">仅清当前关节旧范围</button></div><div class="fields"><label>HOME 计数<input id="zero" type="number" min="0" max="4095"></label><label>单圈位置<input id="raw" readonly></label></div></details>
 </section>
 <section id="panelLimits" class="cal-panel" role="tabpanel" aria-label="设置活动范围" hidden>
 <p>松开关节，手动转到两端；小计数为下限，大计数为上限。</p>
@@ -43,7 +44,7 @@
 <button id="demo" class="full-button">看 3D 正方向（只动模型）</button>
 <div class="actions direction-step"><button id="stepBack">实物退一步 −</button><button id="stepForward" class="primary">实物前进一步 ＋</button></div>
 <button id="flipDirection" class="full-button">方向不一致，反转设置</button><small id="jointHelp"></small>
-<details><summary>方向数值 / 步长 / 速度</summary><label>正方向<select id="sign"><option value="-1">计数减小为正向（−1）</option><option value="1">计数增大为正向（+1）</option></select></label><div class="fields"><label>步长 °<input id="stepDegrees" type="number" min="0.1" max="45" step="0.1" value="0.5"></label><label>速度 °/秒<input id="motionSpeed" type="number" min="4.4" max="20" step="0.1" value="5"></label></div><button id="homeSelected">驱动当前关节回 HOME</button></details>
+<details><summary>方向数值 / 步长 / 速度</summary><label>正方向<select id="sign"><option value="-1">计数减小为正向（−1）</option><option value="1">计数增大为正向（+1）</option></select></label><div class="fields"><label>步长 °<input id="stepDegrees" type="number" min="0.1" max="45" step="0.1" value="10"></label><label>速度 °/秒<input id="motionSpeed" type="number" min="4.4" max="20" step="0.1" value="5"></label></div></details>
 </section>
 <div id="motionStatus" role="status">没有实物运动任务</div>
 <div class="step-navigation"><button id="backStep">← 上一步</button><span id="stepHint">准备后进入范围设置</span><button id="nextStep">下一步 →</button></div>
@@ -51,17 +52,18 @@
 </section></aside>
 <section class="home-card whole-workflow" hidden aria-label="整机检查">
 <h2>整机站姿与垂直检查</h2><p>全部关节保存后：记录站姿 → 回位检查 → 必要时微调。</p>
-<div class="actions whole-actions"><button id="captureHomeAll" class="primary">记录整机参考站姿</button><button id="homeAll">驱动回参考站姿</button></div>
+<div class="actions whole-actions"><button id="captureHomeAll" class="primary">记录整机参考站姿</button><button id="homeAll">回参考站姿并保持力矩</button></div>
 <small id="homeAlignment">读取站姿记录</small>
 <div class="upright-readout"><small>躯干倾斜 · 目标接近 0°</small><b id="uprightAngle">等待读数</b><span id="uprightHint">结合实物观察，确认躯干垂直。</span></div>
 <details><summary>躯干不直？微调关节</summary><select id="fineJoint" aria-label="选择微调关节"></select><div class="actions direction-step"><button data-trigger="stepBack">退一步 −</button><button data-trigger="stepForward">前进一步 ＋</button></div><button class="primary full-button" data-trigger="captureZero">把微调后的位置记为 HOME</button><small>再点底部“保存当前关节”，回位复核。最终重新记录整机站姿。</small></details>
-<details><summary>其他操作与加载状态</summary><button id="onAll">全部上力保持当前位置</button><div class="notice" id="runtime">正在读取</div></details>
+<details><summary>其他操作与加载状态</summary><div class="notice" id="runtime">正在读取</div></details>
 </section>
 <section class="imu-workspace"><section class="imu"><div class="sectionTitle"><h2>IMU 身体姿态</h2><label><input type="checkbox" id="followImu" checked> 身体跟随倾斜</label></div>
+<div class="imu-hardware" aria-label="IMU 检查"><button id="imuConnect" type="button">检查 IMU</button><small id="imuHardwareHint">自动识别已连接的传感器，无需手动设置。</small></div>
 <p id="imuDevice">读取 IMU 配置中</p><div id="imuReadout">等待读数</div><p>摆正身体并静止2秒，再采集。前倾90°：头朝下；左倾90°：身体左侧朝下。至少采集站直和一个侧面，建议三项都采集。</p>
 <div class="actions"><button data-pose="level">采集站直</button><button data-pose="front_down">采集前倾90°</button><button data-pose="left_down">采集左倾90°</button><button data-pose="front_up">采集后倾90°</button><button data-pose="right_down">采集右倾90°</button></div>
 <div id="poseStatus">尚未采集姿态</div><div class="actions"><button id="solve">计算安装方向并预览</button><button id="bias">采集静止偏置</button></div>
 <small>航向只显示相对变化。保存后的身体倾斜和转动方向仍需用实物对照。</small></section></section>
 </main>
-<section class="savebar"><span id="dirty">读取标定状态</span><div class="actions"><details class="more-actions"><summary>更多</summary><button id="discard">撤销未保存修改</button><button data-trigger="saveAll">保存全部草稿</button><button id="export">导出标定</button><details class="all-feedback"><summary>全部关节反馈</summary><div id="jointList"></div></details><small id="applyHelp">返回控制前，先保存或撤销修改，并全部松力矩。</small></details><button id="save" class="primary">保存当前关节</button><button id="saveAll" class="imu-save primary">保存 IMU 及草稿</button><button id="applyExit">返回控制页</button></div></section>
-</div></div><div id="toast" role="status"></div><script src="state-feed.js"></script><script type="module" src="app.js"></script><script defer src="servo-id.js"></script></body></html>
+<section class="savebar"><span id="dirty">读取标定状态</span><div class="actions"><details class="more-actions"><summary>更多</summary><button id="discard">撤销未保存修改</button><button data-trigger="saveAll">保存全部草稿</button><button id="importCalibration">导入标定</button><input id="importFile" type="file" accept=".json,application/json" hidden><button id="export">导出标定</button><details class="all-feedback"><summary>全部关节反馈</summary><div id="jointList"></div></details><small id="applyHelp">返回控制前，先保存或撤销修改；如已上力，扶好并确认后将自动断力切换。</small></details><button id="save" class="primary">保存当前关节</button><button id="saveAll" class="imu-save primary">保存 IMU 及草稿</button><button id="applyExit">返回控制页</button></div></section>
+</div></div><div id="toast" role="status"></div><script src="state-feed.js"></script><script src="calibration-file.js"></script><script type="module" src="app.js"></script><script defer src="servo-id.js"></script></body></html>

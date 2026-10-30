@@ -41,6 +41,18 @@ const feed=window.calibrationFeed;
 const command=d=>feed.command(d);
 async function run(d){try{const result=await command(d);toast(result.message,!!result.warning);await refresh();if(['preview','discard','solve','bias','capture_home_all','capture_home_one','reset_limits','reset_limits_one','prepare_joint','confirm_limits','center_servo'].includes(d.op)){formDirty=false;fillEditor();}return result;}catch(e){toast(e.message,true);return null;}}
 function fresh(){return state && feed.age<1500&&!feed.busy;}
+function renderImuHardware(){
+ $('imuConnect').disabled=busy||!fresh()||!!state?.motion?.active;
+ $('imuConnect').textContent=busy?'请稍候…':'检查 IMU';
+ $('imuHardwareHint').textContent=state?.mock?'模拟环境：检查不会访问实物。':'自动识别传感器并连接，无需手动设置。';
+}
+$('imuConnect').onclick=async()=>{
+ if(!fresh()||busy||state.motion?.active)return;
+ if(formDirty||state.dirty)return toast('请先保存或撤销标定草稿，再检查 IMU',true);
+ busy=true;renderMotion();renderImuHardware();
+ try{await run({op:'imu_detect',revision:state.revision});}
+ finally{busy=false;renderMotion();renderImuHardware();}
+};
 function choose(sid){if(busy||state?.motion?.active)return toast('请先完成或停止当前操作，再切换关节',true);if(formDirty && !confirm('此关节有未保存的编辑，切换会放弃当前表单修改。继续？'))return;if(mode==='demo')setMode('live');selected=sid;formDirty=false;fillEditor();highlight();renderRows();setCalStep(0);}
 function fillEditor(){
  if(!state)return;const row=state.rows.find(r=>r.id===selected),k=String(selected),p=state.profile;
@@ -50,6 +62,7 @@ function fillEditor(){
 }
 function updateReadouts(){if(!state)return;const row=state.rows.find(r=>r.id===selected);$('raw').value=row.count??'无新鲜读数';$('rawSigned').value=row.count==null?'无新鲜读数':row.position_signed??row.count;$('turnHint').textContent=row.count==null?'等待有效位置反馈':`单圈位置 ${row.count} / 4095${(row.position_signed??row.count)<0||(row.position_signed??row.count)>4095?' · 存在累计圈数，可断力后清除':' · 无需清圈'}`;$('degrees').value=row.angle==null?'未知':deg(row.angle).toFixed(1);}
 function renderMotion(){
+ renderImuHardware();
  const moving=!!state?.motion?.active,row=state?.rows.find(r=>r.id===selected);
  for(const id of ['stepBack','stepForward','testLimits','captureZero','captureMin','captureMax','selectedTorque','homeSelected'])$(id).disabled=busy||moving||!fresh()||row?.count==null;
  const i=state?.rows.findIndex(r=>r.id===selected)??-1;$('jointSelect').disabled=busy||moving;$('fineJoint').disabled=busy||moving;$('prevJoint').disabled=busy||moving||i<=0;$('nextJoint').disabled=busy||moving||!state||i>=state.rows.length-1;
@@ -94,9 +107,9 @@ function applyState(next){
  $('runtime').textContent=rt.supported?`正式程序 robotd ${rtSha} 会读网页标定（${rt.reason}），在启动时读取：保存后点“退出标定并应用到正式控制”才生效。修改舵机方向后，需把导出的标定交给训练开发同步。现在为标定模式，行走服务停止。`:`当前正式程序（robotd ${rtSha}）不读网页标定，保存不会影响网页控制。${rt.reason&&rt.reason!=='当前正式程序不读网页标定'?'（'+rt.reason+'）':''}`;
  Object.assign($('runtime').style,rt.supported?{borderLeftColor:'',background:'',color:''}:{borderLeftColor:'#e0715f',background:'#4a2522',color:'#ffd6cf'});
  $('poseStatus').textContent=Object.keys(next.poses).length?'已采集：'+Object.keys(next.poses).map(p=>({level:'站直',front_down:'前倾',left_down:'左倾',front_up:'后倾',right_down:'右倾'}[p])).join('、'):'尚未采集姿态';
- const device=next.imu_status;
+ const device=next.imu_status,hardware=next.imu_config; renderImuHardware();
  if(device){const ages=device.ages_ms||{},age=k=>ages[k]===undefined?'无数据':`${ages[k]} ms`;const caps=device.capabilities||{};
- $('imuDevice').textContent=`${device.model} / ${device.fusion} ｜ ${device.connected?'已连接':'未连接'} ｜ 姿态 ${age('quat')} / 角速度 ${age('gyro')} / 加速度 ${age('accel')} ｜ 能力：${['orientation','gyro','accel'].filter(k=>caps[k]).map(k=>({orientation:'芯片姿态',gyro:'角速度',accel:'加速度'}[k])).join('、')||'等待确认'} ｜ ${device.calibration_valid?'已有安装标定':'此型号尚未标定安装方向'}${device.error?' ｜ '+device.error:''}`;
+ $('imuDevice').textContent=`${device.model.toUpperCase()} · ${device.connected&&device.fresh?'数据正常':'未连接，请检查 IMU'} · ${device.calibration_valid?'已完成安装标定':'待标定安装方向'}`;
  document.querySelectorAll('[data-pose]').forEach(b=>b.disabled=!device.fresh);$('bias').disabled=!device.fresh;}
  if(next.imu?.body_quat){const q=quat(next.imu.body_quat),e=new THREE.Euler().setFromQuaternion(q,'ZYX');$('imuReadout').textContent=`侧倾 ${deg(e.x).toFixed(1)}°　俯仰 ${deg(e.y).toFixed(1)}°　相对航向 ${deg(e.z).toFixed(1)}° ｜ 重力 [${next.imu.gravity.map(v=>v.toFixed(2)).join(', ')}] ｜ 转速 [${next.imu.body_gyro.map(v=>v.toFixed(3)).join(', ')}] rad/s`;}else $('imuReadout').textContent=next.imu?'传感器数据有效，请采集姿态并计算此型号的安装方向':'IMU无新鲜反馈，身体姿态不再更新';
  const gravity=next.imu?.gravity,valid=next.imu_status?.fresh&&next.imu_status?.calibration_valid&&gravity?.length===3;
@@ -129,7 +142,7 @@ async function moveSelected(op,d={}){
  if(formDirty&&!await previewEditor())return;
  if(busy||state.motion?.active)return;
  const speed=Number($('motionSpeed').value);
- if(op==='home_one'&&!confirm(`将使 ID ${selected} 上力并缓慢回到这只关节已保存的 HOME。请留出活动空间；可随时停止或松力矩。`))return;
+ if(op==='home_one'&&!confirm(`将使 ID ${selected} 上力并缓慢回到这只关节已保存的 HOME。到位后保持力矩供验证。请留出活动空间；可随时停止或松力矩。`))return;
  if(op==='test_limits'&&!confirm(`将让ID ${selected} 上力，按当前设置的范围缓慢运行：计数上限 → 下限 → 中间。请确保关节可自由运动；可随时点“停止并保持”或“全部松力矩”。`))return;
  busy=true;renderMotion();try{const result=await run({op,id:selected,revision:state.revision,speed,...d});if(result)setMode('live');}finally{busy=false;renderMotion();}
 }
@@ -146,8 +159,8 @@ $('resetTurns').onclick=async()=>{
 $('centerServo').onclick=async()=>{
  if(!fresh()||busy||state.motion?.active)return;
  if(formDirty&&!await previewEditor())return;
- if(!confirm(`确认 ID ${selected} 已断力，并已手动摆到正确的安装中位？此操作会永久重设这只舵机的硬件中位到2048附近，不上力、不转动、不改P/D和限流。会同时记录当前位置为此关节HOME，接下来确认范围与方向。`))return;
- busy=true;renderMotion();try{const result=await run({op:'center_servo',id:selected,revision:state.revision,confirmed:true});if(result)setCalStep(1);}finally{busy=false;renderMotion();}
+ if(!confirm(`确认 ID ${selected} 已断力，并已手动摆到正确的安装中位？此操作会永久重设这只舵机的硬件中位到2048附近，不上力、不转动、不改P/D和限流。不会记录 HOME；完成后请单独点击“记录当前位置为 HOME”。`))return;
+ busy=true;renderMotion();try{await run({op:'center_servo',id:selected,revision:state.revision,confirmed:true});}finally{busy=false;renderMotion();}
 };
 $('prepareJoint').onclick=async()=>{
  if(!fresh()||busy||state.motion?.active)return;
@@ -212,6 +225,22 @@ $('nextJoint').onclick=()=>{const i=state?.rows.findIndex(r=>r.id===selected);if
 for(const button of document.querySelectorAll('[data-trigger]'))button.onclick=()=>$(button.dataset.trigger).click();
 $('saveAll').onclick=()=>saveCalibration(true);
 $('applyExit').onclick=()=>navigateTo('control');
+$('importCalibration').onclick=()=>{
+ if(!fresh()||busy||state.motion?.active||state.id_setup?.scanning)return toast('请等待连接正常并停止运动或扫描后再导入',true);
+ $('importFile').value='';$('importFile').click();
+};
+$('importFile').onchange=async()=>{
+ const file=$('importFile').files[0];if(!file)return;
+ if(!fresh()||busy||state.motion?.active||state.id_setup?.scanning)return toast('当前无法导入，请等操作结束后重试',true);
+ try{
+  if(file.size>262144)throw Error('文件过大，请选择网页导出的单份标定 JSON。');
+  const profile=window.calibrationFiles.parse(await file.text());
+  if(!confirm('将替换整机标定草稿（所有舵机及 IMU）。'+(formDirty||state.dirty?'当前未保存的编辑将被替换。':'')+'请确认文件来自这台机器人；导入不动作、不自动保存，可点击撤销恢复。'))return;
+  busy=true;renderMotion();
+  const result=await run({op:'preview',profile,revision:state.revision});
+  if(result)toast('已导入整机标定草稿。请在“更多”中点击“保存全部草稿”后生效；也可撤销。');
+ }catch(error){toast(error.message,true);}finally{busy=false;renderMotion();}
+};
 $('export').onclick=()=>{if(!state)return;const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(state.profile,null,2)],{type:'application/json'}));a.download='xgoduck-calibration.json';a.click();URL.revokeObjectURL(a.href);};
 for(const b of document.querySelectorAll('[data-pose]'))b.onclick=()=>run({op:'pose',pose:b.dataset.pose});
 $('solve').onclick=()=>run({op:'solve'});$('bias').onclick=()=>run({op:'bias'});
@@ -227,7 +256,7 @@ function navigateTo(target){
  if(!state||busy)return toast('请等待当前操作完成后再切换页面',true);
  if(formDirty||state.dirty)return toast('有未保存草稿：请先保存或撤销，再切换页面',true);
  if(state.motion?.active)return toast('请先停止实物运动',true);
- if(state.rows.some(row=>row.torque!==false||row.error))return toast('请先全部松力矩，并确认全部舵机反馈正常',true);
+ if(state.rows.some(row=>typeof row.torque!=='boolean'||row.error))return toast('部分舵机反馈异常，请确认反馈正常后再切换',true);
  location.assign(navigationURL(target));
 }
 for(const [id,target] of [['nav-settings','setup'],['nav-control','control']]){
@@ -236,7 +265,7 @@ for(const [id,target] of [['nav-settings','setup'],['nav-control','control']]){
 window.addEventListener('beforeunload',event=>{if(formDirty||state?.dirty){event.preventDefault();event.returnValue='';}});
 
 $('selectedTorque').onclick=async()=>{const row=state?.rows.find(r=>r.id===selected);if(!fresh()||busy||row?.torque==null)return;busy=true;renderMotion();try{await run({op:'torque',id:selected,on:!row.torque});}finally{busy=false;renderMotion();renderRows();}};
-$('tab-imu').onclick=()=>{if(state?.id_setup?.active)return toast('请先返回关节标定，再切换IMU',true);document.body.classList.add('imu-mode');$('tab-imu').setAttribute('aria-selected','true');$('tab-calibration').setAttribute('aria-selected','false');};
+$('tab-imu').onclick=async()=>{if(state?.id_setup?.active){if(!await run({op:'id_exit'}))return;}document.body.classList.add('imu-mode');$('tab-imu').setAttribute('aria-selected','true');$('tab-calibration').setAttribute('aria-selected','false');};
 $('tab-calibration').addEventListener('click',()=>{document.body.classList.remove('imu-mode');$('tab-imu').setAttribute('aria-selected','false');});
 $('tab-servo-id').addEventListener('click',()=>{document.body.classList.remove('imu-mode');$('tab-imu').setAttribute('aria-selected','false');});
 

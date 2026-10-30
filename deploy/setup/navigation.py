@@ -54,15 +54,27 @@ class Navigator:
                 if time.monotonic() >= end: raise
                 time.sleep(.25)
 
+    def wait_feedback(self):
+        end=time.monotonic()+5
+        while True:
+            state=self.api(self.calibration_port,'/api/state')
+            rows=state.get('rows',[])
+            if len(rows)==15 and all(row.get('torque') is not None for row in rows):return state
+            if time.monotonic()>=end:
+                raise SetupError('feedback_unavailable','部分已配置舵机未恢复反馈，请检查供电和接线；无需因此重新分配 ID。')
+            time.sleep(.1)
+
     @staticmethod
-    def check_exit(state):
+    def check_exit(state, allow_powered=False):
         if state.get('dirty'):
             raise SetupError('unsaved_calibration', '有未保存标定草稿，请先保存或撤销，再切换页面。')
         if state.get('motion', {}).get('active'):
             raise SetupError('calibration_moving', '实物运动任务尚未结束，请先停止运动。')
         rows = state.get('rows', [])
-        if len(rows) != 15 or any(row.get('torque') is not False or row.get('error') for row in rows):
-            raise SetupError('calibration_powered', '请先在标定页全部松力矩，并确认全部舵机反馈正常，再切换。')
+        if len(rows) != 15 or any(type(row.get('torque')) is not bool or row.get('error') for row in rows):
+            raise SetupError('calibration_feedback', '部分舵机反馈异常，请确认反馈正常后再切换。')
+        if not allow_powered and any(row['torque'] for row in rows):
+            raise SetupError('release_confirm_required', '当前舵机仍在上力。退出标定后全部舵机将断力，请扶好机器人，再确认切换。')
 
     def relax(self):
         # Use the bus owner's IPC; never open the servo serial port here.
@@ -87,7 +99,7 @@ class Navigator:
             try: yield
             finally: fcntl.flock(stream, fcntl.LOCK_UN)
 
-    def switch(self, target, confirm=False):
+    def switch(self, target, confirm=False, release_confirmed=False):
         if target not in ('setup', 'control', 'calibration', 'servo_setup'):
             raise SetupError('invalid_target', '未知页面。')
         with self.lock():
@@ -110,7 +122,11 @@ class Navigator:
                 if state.get('id_setup',{}).get('active'):
                     if target=='setup':
                         return {'port':None,'path':'/','message':'设置页已就绪，标定服务继续独占串口，正式控制保持停止。'}
-                    raise SetupError('id_setup_active','请先结束 ID 分配、接齐舵机并确认断力，再进入姿态标定或正式控制。')
+                    if state['id_setup'].get('scanning'):
+                        raise SetupError('id_scanning','正在扫描舵机，请先停止扫描再切换页面。')
+                    # Leaving an idle tool is not a request to provision IDs again.
+                    self.api(self.calibration_port,'/api/command',{'op':'id_exit'})
+                    if target=='control':self.wait_feedback()
             if target == 'calibration':
                 if not active:
                     if confirm is not True:
@@ -134,7 +150,11 @@ class Navigator:
                 return {'port':self.calibration_port, 'path':'/', 'message':'标定页已就绪。'}
             if active:
                 state = self.api(self.calibration_port, '/api/state')
-                self.check_exit(state)
+                self.check_exit(state, allow_powered=release_confirmed is True)
+                if any(row['torque'] for row in state['rows']):
+                    # Only a separate, explicit user confirmation authorizes release.
+                    self.api(self.calibration_port,'/api/command',{'op':'off_all'})
+                    state=self.api(self.calibration_port,'/api/state')
                 self.api(self.calibration_port, '/api/command',
                          {'op':'prepare_exit', 'revision':state['revision'], 'confirm':True})
                 try:

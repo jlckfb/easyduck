@@ -17,6 +17,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
 from calibration_math import *
 from hardware import Bus,MockBus
+import imu_settings
 from servo_setup import ServoSetup
 from motion import MotionCoordinator,COUNT_DEG
 from imu import Reader,configuration,calibration as imu_calibration,set_calibration,body as imu_body,MAX_AGE
@@ -151,7 +152,7 @@ class App:
                 elif self.args.mock:
                     self.imu={'quat':list(DEFAULT_MOUNT),'gyro':[0,0,0],'acc':[1,0,0],'at':time.monotonic()}
                     self.history.append(copy.deepcopy(self.imu));self.history=self.history[-160:]
-                    self.imu_status={'model':'lsm6dsv16x','connected':True,'capabilities':{'orientation':True,'gyro':True,'accel':True},'error':None,'ages_ms':{'quat':0,'gyro':0,'accel':0}}
+                    self.imu_status={'model':self.imu_config['model'],'connected':True,'capabilities':{'orientation':True,'gyro':True,'accel':True},'error':None,'ages_ms':{'quat':0,'gyro':0,'accel':0}}
             elapsed=time.monotonic()-start
             self.hz=1/max(.06,elapsed)
             self.stop.wait(max(.001,.06-elapsed))
@@ -181,6 +182,8 @@ class App:
             status['valid']={k:age is not None and 0<=age<=MAX_AGE*1000 for k,age in ((k,status.get('ages_ms',{}).get(k)) for k in ('quat','gyro','accel'))}
             if self.reader:status['valid']={k:k in snap['sample'] and 0<=now-snap['sample'][k][1]<=MAX_AGE for k in ('quat','gyro','accel')}
             return {'rows':rows,'imu':imu,'imu_status':status,'profile':copy.deepcopy(self.profile),'revision':self.revision,'hz':round(self.hz,1),
+                    'imu_config':{k:self.imu_config[k] for k in imu_settings.KEYS},
+                    'imu_devices':sorted(set([self.imu_config['i2c_dev']]+[str(p) for p in Path('/dev').glob('i2c-*')])),
                     'mock':self.args.mock,'poses':copy.deepcopy(self.samples),'dirty':self.profile!=self.saved,
                     'runtime_support':runtime_support(self.args.robotd),
                     'profile_path':self.args.profile,'home':dict(zip(NAMES,HOME)),
@@ -194,6 +197,31 @@ class App:
             if op=='cancel_exit':
                 self.leaving=False; return {'message':'已取消页面切换'}
             if self.leaving: raise ValueError('正在退出标定，请等待页面切换完成')
+            if op in ('imu_configure','imu_detect'):
+                if 'revision' in d and d['revision']!=self.revision:raise ValueError('状态已更新，请刷新后重新选择IMU')
+                if self.motion.job:raise ValueError('请先停止实物运动，再切换IMU')
+                if self.id_setup.active:raise ValueError('请先退出舵机ID分配')
+                if self.profile!=self.saved:raise ValueError('请先保存或撤销已有标定草稿')
+                old=self.imu_config;old_reader=self.reader
+                if old_reader:old_reader.stop()
+                try:
+                    if op=='imu_detect':
+                        selection=({k:self.imu_config[k] for k in ('model','i2c_dev','i2c_addr','fusion')} if self.args.mock else imu_settings.detect())
+                    else:selection=d.get('config')
+                    if self.args.mock:cfg=imu_settings.selected(self.imu_config,selection)
+                    else:
+                        original,updated,cfg=imu_settings.prepare(self.args.config,selection)
+                        if original!=updated.encode('utf-8'):imu_settings.commit(self.args.config,original,updated)
+                except Exception:
+                    if old_reader:
+                        self.reader=Reader(old,imu_calibration(self.profile,old['model']));self.reader.start()
+                    raise
+                self.imu_config=cfg;self.reader=None;self.imu=None;self.samples={};self.history=[];self.imu_key=None
+                self.imu_status={'model':cfg['model'],'connected':False,'capabilities':{},'error':'正在连接 IMU'}
+                if not self.args.mock:
+                    self.reader=Reader(cfg,imu_calibration(self.profile,cfg['model']));self.reader.start()
+                self.revision+=1
+                return {'message':('模拟检查完成，未访问实物。' if self.args.mock else '已识别 '+cfg['model'].upper()+'，正在连接。'),'persisted':not self.args.mock}
             if op=='id_enter':
                 if self.motion.job: raise ValueError('请先停止实物运动')
                 if self.profile!=self.saved: raise ValueError('请先保存或撤销标定草稿')
@@ -204,7 +232,7 @@ class App:
                 for sid in set(self.id_setup.found) | self.id_setup.held_ids:
                     if self.bus.read_raw(sid,40,1)!=b'\0': raise ValueError('请先确认发现的舵机全部断力')
                 self.id_setup.active=False;self.rows={}
-                return {'message':'已返回姿态标定；新机器人请重新记录 HOME、方向、限位和 IMU'}
+                return {'message':'已退出 ID 设置，恢复读取现有关节；已有 ID 和标定保持不变。'}
             if op=='id_scan':
                 self.id_setup.scan();return {'message':'正在扫描 ID 0～253，不修改舵机参数'}
             if op=='id_stop':
@@ -265,14 +293,13 @@ class App:
                 record['result']=result;atomic_save(journal,record)
                 saved=copy.deepcopy(self.saved);draft=copy.deepcopy(self.profile)
                 for profile in (saved,draft):
-                    profile['zero'][str(sid)]=result['position']
                     profile['lim'][str(sid)]=[0,4095]
                     profile['limits_pending']=list(dict.fromkeys(profile.get('limits_pending',[])+[sid]))
                     profile.pop('reference_pose',None)
                     validate_profile(profile)
                 atomic_save(self.args.profile,saved)
                 self.saved=saved;self.profile=draft;self.revision+=1
-                return {'message':'ID%s 硬件中位已回读确认：%s，保持断力；此位置已记录为当前关节HOME，下一步确认范围与方向。未修改其他舵机、P/D或限流'%(sid,result['position']),'result':result}
+                return {'message':'ID%s 硬件中位已回读确认：%s，保持断力；HOME 尚未更新，请单独记录当前位置为 HOME，再确认范围与方向。未修改其他舵机、P/D或限流'%(sid,result['position']),'result':result}
             if op=='reset_limits_one':
                 if self.motion.job: raise ValueError('请先停止运动，再清除当前关节旧限位')
                 if d.get('revision')!=self.revision: raise ValueError('草稿已变化，请刷新后重试')
