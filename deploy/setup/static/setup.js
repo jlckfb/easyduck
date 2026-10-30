@@ -181,7 +181,6 @@ function applyAccess(data) {
   const idTarget=new URL(calibrationTarget.href);idTarget.searchParams.set('target','servo_setup');$('open-servo-id').href=idTarget.href;$('open-servo-id').hidden=false;
   calibration.textContent = '打开标定页 ↗';
   control.textContent = '打开当前网络的控制页 ↗';
-  const system = $('system-link'); system.hidden = !data.system_url; if (data.system_url) system.href = data.system_url;
 }
 
 async function refreshStatus(showToast = false) {

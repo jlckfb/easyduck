@@ -41,7 +41,6 @@ journalctl -u easyduck-setup.service
 | `EASYDUCK_SETUP_HOST` | 监听地址，默认 `0.0.0.0` |
 | `EASYDUCK_SETUP_PORT` | 网页端口，默认 `80` |
 | `EASYDUCK_CONTROL_PORT` | 已有机器人控制页端口，默认 `9527` |
-| `EASYDUCK_SYSTEM_PORT` | 可选，其他系统管理网页的端口；不填写则不显示链接 |
 | `EASYDUCK_SETUP_STATE` | 手柄重连信息目录，默认 `/var/lib/easyduck/setup` |
 
 修改配置后执行 `sudo systemctl restart easyduck-setup.service`。网页服务需要读取系统账号密码哈希，并管理网络配置，因此由 root 运行；密码不会写入网页日志或命令行参数。

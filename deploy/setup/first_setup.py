@@ -59,10 +59,10 @@ class Auth:
             return False
 
 class App:
-    def __init__(self, backend=None, auth=None, control_port=9527, system_port=None, navigation=None):
+    def __init__(self, backend=None, auth=None, control_port=9527, navigation=None):
         self.backend = backend or Backend()
         self.auth = auth or Auth(os.environ.get('EASYDUCK_SETUP_USER', default_user()))
-        self.control_port, self.system_port = control_port, system_port
+        self.control_port = control_port
         self.navigation = navigation or Navigator(getattr(self.backend, "state_dir", "/var/lib/easyduck/setup"), control_port, int(os.environ.get("EASYDUCK_CALIBRATION_PORT", "8766")))
         self.sessions, self.failures, self.jobs = {}, {}, {}
         self.lock, self.cache_lock = threading.Lock(), threading.Lock()
@@ -182,7 +182,7 @@ def make_handler(app):
             if path=='/api/status':
                 try:
                     data=dict(app.status()); address=self.connection.getsockname()[0]
-                    data.update(control_url=f'http://{address}:{app.control_port}/',system_url=f'http://{address}:{app.system_port}/' if app.system_port else None,login_user=app.auth.username)
+                    data.update(control_url=f'http://{address}:{app.control_port}/',login_user=app.auth.username)
                     return self.send(200,{'ok':True,'data':data})
                 except Exception: return self.send(503,{'ok':False,'message':'读取连接状态失败，请检查NetworkManager和BlueZ服务。'})
             if path.startswith('/api/jobs/'):
@@ -230,7 +230,7 @@ def main():
             with backend.operation('bluetooth'): backend.reconnect_once()
         except SetupError: pass
         return
-    app=App(backend=backend,control_port=int(os.environ.get('EASYDUCK_CONTROL_PORT','9527')),system_port=int(os.environ['EASYDUCK_SYSTEM_PORT']) if os.environ.get('EASYDUCK_SYSTEM_PORT') else None)
+    app=App(backend=backend,control_port=int(os.environ.get('EASYDUCK_CONTROL_PORT','9527')))
     server=ThreadingHTTPServer((args.host,args.port),make_handler(app));server.daemon_threads=True
     for sig in (signal.SIGTERM,signal.SIGINT): signal.signal(sig,lambda *_:threading.Thread(target=server.shutdown,daemon=True).start())
     print(f'Easyduck connection setup listening on {args.host}:{args.port}',flush=True)
