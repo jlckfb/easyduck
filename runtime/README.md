@@ -15,6 +15,6 @@
 
 四个共用模块编入程序，不需要分别启动服务。`test-fixtures/` 是测试输入，不是板端部署配置。
 
-`duck-control/tests/fixtures/scs_calibration_test_fixture.json` 是舵机自动测试专用的固定样本，不参与部署；实物基线配置位于 `../config/board/zero_pos.json`。
+`duck-control/tests/fixtures/scs_calibration_test_fixture.json` 是舵机自动测试专用的固定样本，不参与部署；安装基线模板位于 `../config/board/zero_pos.json`，它是待标定占位数据；每台实物使用自身 `/etc/robot/visual_calibration.json`。
 
 构建、测试和安装步骤见[软件使用说明](../docs/软件使用说明.md)。

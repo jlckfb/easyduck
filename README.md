@@ -69,7 +69,7 @@ Easyduck 把机器人主控、手柄、网页、标定台、动作模型和音�
 | [`runtime/`](runtime/README.md) | 四个 Rust 程序、四个共用模块及 Cargo 依赖锁文件 |
 | [`web/`](web/README.md) | 正式控制页面和 Python 服务，默认端口 9527 |
 | [`calibration/`](calibration/README.md) | 舵机与 IMU 标定台、3D 网格和本地浏览器依赖，默认端口 8766 |
-| [`config/`](config/README.md) | 新机器配置样例，以及特定机器的参考配置 |
+| [`config/`](config/README.md) | 新机器待标定模板，以及泰山派硬件参考配置 |
 | [`models/`](models/README.md) | 五个部署模型、接口约定、来源和完整 SHA256 |
 | [`deploy/`](deploy/README.md) | 编译、安装、启动、核对、回退工具及 systemd、声卡和内核补丁文件 |
 | [`docs/`](docs/软件使用说明.md) | 完整软件使用说明 |
@@ -96,7 +96,7 @@ bash deploy/build.sh
 
 从 `config/examples/` 开始。样例默认关闭动作策略，零点 2048 只是格式示例；需要通过标定台完成自己的零点、方向、限位和 IMU 标定。
 
-`config/board/` 是特定机器的参考配置，其中策略已启用，不能直接当作其他机器的标定结果。主控运行时读取 `/etc/robot/`，文件作用和读取优先级见[配置说明](config/README.md)。
+`config/board/` 提供泰山派硬件参考配置；它与 `config/examples/` 均使用待标定模板、默认关闭策略，每台新机器需独立完成标定。主控运行时读取 `/etc/robot/`，文件作用和读取优先级见[配置说明](config/README.md)。
 
 ### 3. 先检查安装文件
 

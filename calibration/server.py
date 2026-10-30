@@ -74,7 +74,7 @@ class App:
     def __init__(self,args):
         self.args=args; self.lock=threading.RLock(); self.stop=threading.Event(); self.leaving=False
         baseline=json.loads(Path(args.baseline).read_text(encoding='utf-8'))
-        baseline['imu']={'mount':DEFAULT_MOUNT,'gyro_bias':[0,0,0]}
+        baseline.setdefault('imu',{'model':'lsm6dsv16x','frame':'sensor-v1','mount':[1,0,0,0],'gyro_bias':[0,0,0],'mount_valid':False})
         self.saved=json.loads(Path(args.profile).read_text()) if Path(args.profile).exists() else baseline
         validate_profile(self.saved)
         self.profile=copy.deepcopy(self.saved); self.revision=0

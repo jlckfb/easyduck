@@ -86,7 +86,7 @@ docker run --rm --network none \
 python3 deploy/install.py --root build/stage --profile examples
 ```
 
-这会把程序、清单中列出的模型、网页、标定台、配置、服务文件、声卡配置、许可证及第三方声明放到 `build/stage/`。`examples` 适用于新机器；`board` 是特定机器的参考配置，使用前应核对自身标定。
+这会把程序、清单中列出的模型、网页、标定台、配置、服务文件、声卡配置、许可证及第三方声明放到 `build/stage/`。两套配置均为新机器待标定模板；`board` 提供泰山派硬件接口参考。打包通用镜像时应使用空安装目录或明确更新镜像构建目录中的模板，不能把已使用机器的 `/etc/robot/` 当成默认配置复制进去。
 
 `/opt/robot/licenses/THIRD_PARTY_NOTICES.md` 随应用安装，纳入哈希校验与回退；其中指向源码的相对链接需在软件仓库中查看。three.js 许可仍随标定台浏览器素材提供。
 

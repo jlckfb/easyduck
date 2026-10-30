@@ -1,4 +1,4 @@
-# Reference configuration for a specific TaishanPi 1M + HD1910 robot.
+# TaishanPi 1M + HD1910 hardware reference with pending per-machine calibration.
 # Read at startup from /etc/robot/robotd.toml; restart robotd after changes.
 # Calibrate your own robot before enabling motion.
 
@@ -11,7 +11,7 @@ hz = 50
 gain = 6
 gain_d = 20
 standing_gain_ratio = 1.0
-enabled = true
+enabled = false
 mode = "walk"
 walk = "/opt/robot/daemon/policies/xgoduck_walk_original_signs_20261009.onnx"
 stand = "/opt/robot/daemon/policies/xgoduck_walk_original_signs_20261009.onnx"
