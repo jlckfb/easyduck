@@ -22,14 +22,15 @@ pub use synth::SR;
 /// Bump when the synth changes enough that existing banks should re-render on the next
 /// install — the `.seed` marker includes it, so old banks stop matching and regenerate.
 /// v4 was the last Python bank; v5 is the Rust port (new RNG, 48 kHz native).
-pub const BANK_VERSION: u32 = 5;
+pub const BANK_VERSION: u32 = 6;
 
 /// A recipe: personality + variant in, f32 mono at [`SR`] out.
 pub type Recipe = fn(&Personality, u32) -> Vec<f32>;
 
 /// Every tag and its recipe. Order is the render order, nothing more.
-pub const TAGS: [(&str, Recipe); 7] = [
+pub const TAGS: [(&str, Recipe); 8] = [
     ("alarm", voices::alarm),
+    ("low_battery", voices::low_battery),
     ("greet", voices::greet),
     ("inquire", voices::inquire),
     ("peck", voices::peck),
@@ -43,6 +44,7 @@ pub const TAGS: [(&str, Recipe); 7] = [
 /// (wake-up) are the most-heard tags, so they get the most.
 pub fn variant_count(tag: &str) -> u32 {
     match tag {
+        "low_battery" => 1,
         "greet" | "chirp" => 12,
         "wheee" => 6,
         _ => 10,
@@ -149,9 +151,10 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("sounds-test-{}", std::process::id()));
         let p = Personality::from_seed(100);
         let paths = render_all(&p, &dir).unwrap();
-        // 6 one-shot tags × their variants + wheee (6 × 3 segments).
-        let expected = 10 + 12 + 10 + 10 + 12 + 10 + 6 * 3;
+        // One low-battery warning, 6 other one-shot tags and wheee segments.
+        let expected = 1 + 10 + 12 + 10 + 10 + 12 + 10 + 6 * 3;
         assert_eq!(paths.len(), expected);
+        assert!(dir.join("low_battery/low_battery_a.wav").exists());
         assert!(dir.join("chirp/chirp_a.wav").exists());
         assert!(dir.join("chirp/chirp_l.wav").exists(), "12 chirp variants");
         assert!(dir.join("wheee/wheee_loop_f.wav").exists());

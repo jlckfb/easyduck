@@ -61,6 +61,22 @@ fn voice(
     body
 }
 
+/// Three descending warning tones, rendered once as a single low-battery cue.
+pub fn low_battery(p: &Personality, _variant: u32) -> Vec<f32> {
+    let mut out = Vec::new();
+    for hz in [880.0, 660.0, 440.0] {
+        let t = s::t_axis(0.22);
+        let freq = vec![hz as f32; t.len()];
+        let env = s::expdecay(&t, 0.01, 0.18);
+        let mut rng = p.variant_rng("low_battery", hz as u32);
+        let tone = voice(p, &t, &freq, &mut rng, 0.0, 0.0);
+        out.extend(tone.iter().zip(&env).map(|(v,e)| v*e));
+        out.resize(out.len() + (0.12 * f64::from(SR)) as usize, 0.0);
+    }
+    s::normalise(&mut out, -6.0);
+    out
+}
+
 pub fn alarm(p: &Personality, variant: u32) -> Vec<f32> {
     let mut rng = p.variant_rng("alarm", variant);
     let dur = (0.20 + 0.12 * rng.random()) / p.speed;

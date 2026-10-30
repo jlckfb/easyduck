@@ -30,6 +30,7 @@ pub struct Flow {
     pub posture_sit: Option<bool>,
     roulade_until: Option<f64>,
     reset_policy: bool,
+    low_battery_sit: bool,
     mouth: Option<f64>,
 }
 
@@ -37,7 +38,7 @@ impl Default for Flow {
     fn default() -> Self {
         Self { phase: Phase::Walk, fall_elapsed: 0.0, stand_elapsed: 0.0,
             hold_elapsed: 0.0, phase_since: None, pick_phi: None, roulade_until: None,
-            reset_policy: true, mouth: None, posture_sit: None }
+            reset_policy: true, low_battery_sit: false, mouth: None, posture_sit: None }
     }
 }
 
@@ -107,7 +108,24 @@ impl Flow {
         }
     }
 
+    /// Low battery owns the flow, including recovery, until the runtime cuts torque.
+    pub fn request_sit(&mut self) {
+        self.low_battery_sit = true;
+        if self.phase != Phase::Walk || self.rolling() || self.posture_sit != Some(true) || self.pick_phi.is_some() {
+            self.phase = Phase::Walk;
+            self.roulade_until = None;
+            self.fall_elapsed = 0.0;
+            self.stand_elapsed = 0.0;
+            self.phase_since = None;
+            self.pick_phi = None;
+            self.posture_sit = Some(true);
+            self.mouth = Some(0.0);
+            self.reset_policy = true;
+        }
+    }
+
     pub fn toggle_posture(&mut self) -> Result<&'static str, &'static str> {
+        if self.low_battery_sit { return Err("low battery is latched"); }
         if self.phase != Phase::Walk || self.pick_phi.is_some() || self.rolling() {
             return Err("sit/stand unavailable during recovery, pick or roulade");
         }
@@ -162,7 +180,7 @@ impl Flow {
         }
         let angle = (-gravity[2]/norm).clamp(-1.0, 1.0).acos().to_degrees();
         let before = self.phase;
-        if self.roulade_until.is_none() { match self.phase {
+        if !self.low_battery_sit && self.roulade_until.is_none() { match self.phase {
             Phase::Walk => {
                 if angle > 45.0 || (head_ground && self.pick_phi.is_none()) {
                     self.fall_elapsed += 1.0/50.0;
@@ -238,6 +256,44 @@ impl Flow {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn low_battery_sit_is_idempotent_preempts_pick_and_ignores_walk() {
+        let mut f = super::Flow::default();
+        f.start_pick().unwrap();
+        f.request_sit();
+        assert!(f.pick_phi.is_none());
+        for _ in 0..3 {
+            f.request_sit();
+            let frame = f.frame([0.0, 0.0, -1.0], 0.0, true,
+                                [0.3, 0.2, 0.0], [0.0;4], 0.0).unwrap();
+            assert_eq!(frame.network, super::Network::Posture);
+            assert_eq!(frame.twist, [1.0, 0.0, 0.0]);
+            f.inferred(&frame);
+        }
+        assert!(!f.reset_policy);
+        f.request_sit();
+        assert!(!f.reset_policy, "holding the seat must not reset inference every tick");
+    }
+
+    #[test]
+    fn low_battery_sit_preempts_roll_and_recovery_and_cannot_be_toggled() {
+        for phase in [super::Phase::Walk, super::Phase::DefaultPose, super::Phase::Getup] {
+            let mut f = super::Flow::default();
+            f.roulade_until = Some(20.0);
+            f.phase = phase;
+            f.request_sit();
+            assert_eq!(f.phase, super::Phase::Walk);
+            assert!(!f.rolling());
+            for i in 0..100 {
+                let frame=f.frame([1.0,0.0,0.0],i as f64*0.02,true,[0.3;3],[0.2;4],1.0).unwrap();
+                assert_eq!(frame.network,super::Network::Posture);
+                assert_eq!(frame.twist,[1.0,0.0,0.0]);
+                assert!(f.toggle_posture().is_err());
+                f.inferred(&frame);
+            }
+        }
+    }
+
     use super::*;
     #[test]
     fn pick_runs_200_frames_and_closes_at_point_four() {

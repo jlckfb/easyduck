@@ -192,6 +192,27 @@ impl Controller {
 
     pub fn xgo_recovering(&self) -> bool { self.xgo.phase != crate::xgo::Phase::Walk }
 
+    pub fn can_low_battery_sit(&self, xgo_profile: bool) -> bool {
+        if xgo_profile { self.policy.has_posture() } else { self.policy.has_sitstand() }
+    }
+
+    pub fn request_low_battery_sit(&mut self, xgo_profile: bool) {
+        if !self.can_low_battery_sit(xgo_profile) { return; }
+        if xgo_profile {
+            self.xgo_command = (Command::default(), 0.0);
+            self.xgo.request_sit();
+        } else {
+            self.roulade = None;
+            if self.sit != Sit::Sitting || self.ground_pick.is_some() || self.kick.is_some() {
+                self.reset();
+            }
+            self.ground_pick = None;
+            self.kick = None;
+            self.roulade_chain = 0.0;
+            self.sit = Sit::Sitting;
+        }
+    }
+
     pub fn toggle_xgo_posture(&mut self) -> Result<&'static str, &'static str> {
         if !self.policy.has_posture() { return Err("no commanded sit/stand policy loaded"); }
         self.xgo.toggle_posture()

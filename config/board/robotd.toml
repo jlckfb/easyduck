@@ -25,6 +25,9 @@ action_scale = 1.0
 head_lowpass = 1.0
 legs_lowpass = 1.0
 [safety]
+low_battery_sit = true
+low_battery_voltage = 6.2
+battery_empty_shutdown = false
 overtemp_gain = 3
 fall_gravity_z = -0.819152
 [audio]

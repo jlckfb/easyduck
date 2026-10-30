@@ -7,6 +7,7 @@
 mod chorale;
 mod control;
 mod intents;
+mod low_battery;
 mod control_owner;
 mod params;
 mod soc;
@@ -359,6 +360,7 @@ struct RobotState {
     imu_stale_run: AtomicU64,
     imu_ready: AtomicBool,
     shutdown: AtomicBool,
+    low_battery_latched: AtomicBool,
     /// Fan-out for `robot.state`. Bounded and lossy by design — see [`STATE_BUFFER`].
     state_tx: tokio::sync::broadcast::Sender<proto::RobotState>,
     /// What `btd` should be advertising, published when it changes.
@@ -438,6 +440,7 @@ impl RobotState {
             imu_stale_run: AtomicU64::new(0),
             imu_ready: AtomicBool::new(false),
             shutdown: AtomicBool::new(false),
+            low_battery_latched: AtomicBool::new(false),
             state_tx: tokio::sync::broadcast::Sender::new(STATE_BUFFER),
             chorale_tx: tokio::sync::broadcast::Sender::new(8),
             policy_error: ArcSwapOption::empty(),
@@ -1291,6 +1294,7 @@ async fn control_loop<T: RobotIo>(
     let mut stopped_driving_at: Option<Instant> = None;
 
     // The sit-then-power-off sequence.
+    let mut low_battery = low_battery::LowBattery::default();
     let mut shutdown_sit: Option<Instant> = None;
     let mut powered_off = false;
     let mut warned_imu_warming = false;
@@ -1425,14 +1429,39 @@ async fn control_loop<T: RobotIo>(
         }
         // Reference Controller.step disarms after 150 ms without sensor feedback,
         // or immediately if the IMU is unavailable. It does not re-arm itself.
+        let battery_v = f64::from_bits(state.battery_v.load(Ordering::Relaxed));
+        if low_battery.observe(params.safety.low_battery_sit, battery_v,
+                               params.safety.low_battery_voltage) {
+            state.low_battery_latched.store(true, Ordering::Release);
+            tracing::warn!(battery_v, "low battery: preempting controls, sitting, then torque off; no automatic poweroff");
+            if let Some(voice) = voice.as_mut() { voice.low_battery(); }
+            if !controller.as_ref().is_some_and(|c| c.can_low_battery_sit(xgo_profile)) {
+                tracing::warn!("low battery: sitting model unavailable; cutting torque");
+            }
+        }
         if xgo_profile && bringup != Bringup::Limp &&
             (tick_start.duration_since(xgo_last_feedback)>Duration::from_millis(150)
-             || (snapshot.twist_age>Duration::from_secs(1) && !intents.control_hold.load(Ordering::Acquire)) || !safety.imu_ready()) {
+             || (!low_battery.active() && snapshot.twist_age>Duration::from_secs(1) && !intents.control_hold.load(Ordering::Acquire)) || !safety.imu_ready()) {
             intents.request_relax();
             snapshot.enabled=false;
             tracing::warn!(feedback_age_ms=tick_start.duration_since(xgo_last_feedback).as_millis() as u64,
                 command_age_ms=snapshot.twist_age.as_millis() as u64, imu_ready=safety.imu_ready(),
                 "xgoduck disarm: feedback >150ms, command >1s, or IMU unavailable; see preceding bus/servo alarm");
+        }
+        if low_battery.active() {
+            mode_change = None;
+            shutdown_sit = None;
+            twist_ema = [0.0; 3];
+            head_ema = [0.0; 4];
+            body_ema = [0.0; 3];
+            chorale_head = [0.0; 4];
+            snapshot.command = PolicyCommand::default();
+            snapshot.pose.active = false;
+            snapshot.mouth = 0.0;
+            let emergency_driving = !low_battery.locked() && bringup != Bringup::Limp
+                && controller.as_ref().is_some_and(|c| c.can_low_battery_sit(xgo_profile));
+            intents.set_enabled(emergency_driving);
+            snapshot.enabled = emergency_driving;
         }
         let (gated, deadman) = if xgo_profile {
             (snapshot.command, None)
@@ -1452,6 +1481,9 @@ async fn control_loop<T: RobotIo>(
             _ => HOME_RAMP,
         };
         match power_request {
+            Some(intents::PowerRequest::Init { .. }) if low_battery.active() => {
+                tracing::warn!("robot.init refused: low battery is latched");
+            },
             Some(intents::PowerRequest::Init { .. }) if xgo_profile && (!safety.imu_ready() || !safety.imu_fresh()) => {
                 tracing::warn!("xgoduck: IMU feedback unavailable; Default pose refused");
             },
@@ -1529,6 +1561,14 @@ async fn control_loop<T: RobotIo>(
             None => {}
         }
 
+        // Explicit torque-off may abort a sit, but no client may re-arm afterwards.
+        if low_battery.active() && matches!(power_request, Some(intents::PowerRequest::Relax)) {
+            low_battery.stop();
+        }
+        if low_battery.active() && !low_battery.locked() && bringup != Bringup::Limp {
+            bringup = Bringup::Ready;
+        }
+
         // One-shot skill requests, taken once per tick like the power request. They need a
         // driving robot — the prototype's buttons likewise did nothing until the policy ran.
         let requests = intents.take_skills();
@@ -1537,7 +1577,7 @@ async fn control_loop<T: RobotIo>(
                 c.command_xgo(snapshot.command,snapshot.mouth,xgo_command_revision);
             }
         }
-        if requests.any() {
+        if requests.any() && !low_battery.active() {
             match controller.as_mut() {
                 Some(controller)
                     if snapshot.enabled && bringup == Bringup::Ready && shutdown_sit.is_none() =>
@@ -1587,7 +1627,7 @@ async fn control_loop<T: RobotIo>(
         // play). The hold is held only while `padd`'s re-notifications stay fresh; a client
         // that dies mid-ride leaves a ride that lands rather than one that loops forever.
         if let Some(voice) = voice.as_mut() {
-            let hold = if powered_off {
+            let hold = if powered_off || low_battery.active() {
                 intents::WheeeHold::Released
             } else {
                 intents.wheee_hold()
@@ -1596,7 +1636,7 @@ async fn control_loop<T: RobotIo>(
             voice.set_wheee_volume(intents.wheee_volume());
             voice.wheee(hold);
             for tag in intents.take_sounds() {
-                voice.play(tag.as_str(), false);
+                if !low_battery.active() { voice.play(tag.as_str(), false); }
             }
 
         }
@@ -1609,7 +1649,9 @@ async fn control_loop<T: RobotIo>(
         // throughout — the robot holds itself up across the swap rather than sitting down.
         if let Some(code) = intents.take_mode_switch() {
             let target = mode_of(code);
-            if target == policy_params.mode {
+            if low_battery.active() {
+                tracing::warn!("mode switch refused: low battery is latched");
+            } else if target == policy_params.mode {
                 tracing::info!(
                     mode = target.as_str(),
                     "already in that mode; nothing to switch"
@@ -1646,11 +1688,10 @@ async fn control_loop<T: RobotIo>(
         // The sit-then-power-off sequence: `robot.shutdown`, or a genuinely empty pack.
         // The battery reading is a ~10 s EMA refreshed once a second, so a load sag cannot
         // reach the floor — a pack that gets there is spent.
-        let battery_v = f64::from_bits(state.battery_v.load(Ordering::Relaxed));
-        let battery_empty = params.safety.battery_empty_shutdown
+        let battery_empty = !params.safety.low_battery_sit && params.safety.battery_empty_shutdown
             && battery_v > 0.0
             && battery_v <= duck_control::model::BATTERY_EMPTY_V;
-        if !powered_off && shutdown_sit.is_none() && (intents.take_shutdown() || battery_empty) {
+        if !powered_off && !low_battery.active() && shutdown_sit.is_none() && (intents.take_shutdown() || battery_empty) {
             let can_sit = snapshot.enabled
                 && bringup == Bringup::Ready
                 && !safety.fallen()
@@ -2012,7 +2053,7 @@ async fn control_loop<T: RobotIo>(
         }
         if was_driving && !driving {
             stopped_driving_at = Some(tick_start);
-            if !snapshot.enabled {
+            if !snapshot.enabled && !low_battery.active() {
                 // A deliberate stop returns to the home pose — the prototype's Start-off
                 // ("policy DISABLED - returning to default pose"). Commanded directly, no
                 // ramp: the servos do the travel at their own speed, and the robot is
@@ -2045,7 +2086,7 @@ async fn control_loop<T: RobotIo>(
             1.0
         };
 
-        let (mut targets, gain, moving, policy_label) = match (driving, sensors.as_ref()) {
+        let (mut targets, gain, moving, mut policy_label) = match (driving, sensors.as_ref()) {
             // The limp-fall sequence, before anything else — `driving` is false throughout,
             // so without this it would fall through to the hold branch and the robot would
             // be commanded its pre-fall pose at walking gain, which is precisely the thing
@@ -2080,6 +2121,7 @@ async fn control_loop<T: RobotIo>(
             },
             (true, Some(sensors)) => {
                 let controller = controller.as_mut().expect("driving implies a controller");
+                if low_battery.active() { controller.request_low_battery_sit(xgo_profile); }
                 let step = if xgo_profile {
                     controller.step_xgo(sensors,
                         state.started.elapsed().as_secs_f64()).map(|(step,mouth)| { xgo_mouth=mouth; step })
@@ -2145,6 +2187,7 @@ async fn control_loop<T: RobotIo>(
             if let Some((active, piece_pin)) = intents.take_chorale_request() {
                 ensemble.set_active(active, tick_start, piece_pin);
             }
+            if low_battery.active() { ensemble.set_active(false, tick_start, None); }
             for heard in intents.take_chorale_heard() {
                 ensemble.heard(&heard, tick_start);
             }
@@ -2255,9 +2298,38 @@ async fn control_loop<T: RobotIo>(
                 } else { duck_control::model::mouth_target(snapshot.mouth) };
         }
 
+        if low_battery.active() {
+            let available = bringup != Bringup::Limp && imu_warm && imu_fresh
+                && controller.as_ref().is_some_and(|c| c.can_low_battery_sit(xgo_profile));
+            let seated = sensors.as_ref().is_some_and(|s| {
+                matches!(policy_label, "xgo_sit" | "sit") && (0..5).chain(10..15).all(|j|
+                    s.velocities[j].is_finite() && s.velocities[j].abs() < 0.15
+                    && (s.positions[j]-targets[j]).abs() < 0.15)
+            });
+            low_battery.advance(tick_start, available, seated);
+            if low_battery.locked() {
+                intents.set_enabled(false);
+                snapshot.enabled = false;
+                state.moving.store(false, Ordering::Relaxed);
+                policy_label = "low_battery_locked";
+                if low_battery.needs_release() {
+                    match safety.set_torque(false) {
+                        Ok(()) => {
+                            low_battery.released();
+                            tracing::warn!(reason=low_battery.reason(), "low battery: torque off; controls locked until robotd restart");
+                        }
+                        Err(error) => tracing::error!(%error, "low battery: torque-off unconfirmed; retrying"),
+                    }
+                }
+                bringup = Bringup::Limp;
+                was_driving = false;
+                state.homed.store(false, Ordering::Relaxed);
+            } else { policy_label = "low_battery_sitting"; }
+        }
+
         // Preserve the deployed SCS runtime: an idle, non-homing robot writes no targets.
         // A stop received during inference wins over that obsolete output.
-        if xgo_profile && snapshot.enabled && !intents.enabled() { continue; }
+        if xgo_profile && snapshot.enabled && !intents.enabled() && !low_battery.active() { continue; }
         if xgo_arm_tick { targets=coast.known_positions(hold); }
         if !xgo_arm_tick && bringup != Bringup::Limp && (xgo_profile || snapshot.enabled || matches!(bringup, Bringup::Homing { .. })) {
             match safety.apply(targets, hold, gain) {
@@ -2791,6 +2863,10 @@ fn apply_controlled(state:&RobotState,intents:&Intents,id:Option<proto::Id>,call
     if managed {manager.tick(intents.now_us());intents.sync_control(&mut manager);}
     let readonly=matches!(call,proto::Call::RobotHealth|proto::Call::RobotSubscribe(_)|proto::Call::RobotMode|proto::Call::RobotModelApi);
     let emergency=matches!(call,proto::Call::RobotRelax);
+    if state.low_battery_latched.load(Ordering::Acquire) && !readonly && !emergency {
+        return id.map(|id|proto::Response::ok(Some(id),&proto::IntentResult {
+            accepted:false, reason:Some("low battery: controls locked until robotd restart".into()) }));
+    }
     if managed && source.is_some() && !readonly && !emergency && !manager.allows(source.unwrap(),token) {
         return id.map(|id|proto::Response::ok(Some(id),&proto::IntentResult {accepted:false,reason:Some("inactive control input or waiting for neutral".into())}));
     }
@@ -2859,7 +2935,13 @@ fn dispatch(
     intents: &Intents,
     id: proto::Id,
     call: &proto::Call,
-) -> proto::Response {
+ ) -> proto::Response {
+    if state.low_battery_latched.load(Ordering::Acquire)
+        && !matches!(call, proto::Call::RobotHealth | proto::Call::RobotSubscribe(_)
+            | proto::Call::RobotMode | proto::Call::RobotModelApi | proto::Call::RobotRelax) {
+        return proto::Response::ok(Some(id), &proto::IntentResult {
+            accepted:false, reason:Some("low battery: controls locked until robotd restart".into()) });
+    }
     match call {
         proto::Call::RobotMove(_)
         | proto::Call::RobotHead(_)
@@ -3590,6 +3672,24 @@ mod tests {
     /// JSON shape and they would all still pass. `tests/updater_gate.rs` catches that
     /// against a live process; this runs in microseconds and fails on the exact method.
     #[test]
+    fn low_battery_rejects_enable_init_and_notifications_but_allows_relax() {
+        let state=state();let intents=Intents::new();
+        state.low_battery_latched.store(true,Ordering::Release);
+        for call in [proto::Call::RobotInit(proto::InitParams {duration_ms:None}),
+            proto::Call::RobotEnable(proto::EnableParams {on:true,toggle:false}),
+            proto::Call::RobotMove(proto::MoveParams {vx:0.2,vy:0.0,vyaw:0.0})] {
+            let result:proto::IntentResult=dispatch(&state,&intents,proto::Id::Number(1),&call).result_as().unwrap();
+            assert!(!result.accepted);
+        }
+        let notification=proto::Call::RobotMove(proto::MoveParams {vx:0.2,vy:0.0,vyaw:0.0});
+        assert!(apply_controlled(&state,&intents,None,&notification,None,0).is_none());
+        assert!(!intents.enabled());
+        assert_eq!(intents.snapshot().command.twist,[0.0;3]);
+        let result:proto::IntentResult=dispatch(&state,&intents,proto::Id::Number(1),&proto::Call::RobotRelax).result_as().unwrap();
+        assert!(result.accepted);
+    }
+
+    #[test]
     fn dispatch_answers_every_method_in_the_typed_shape() {
         let s = state();
         ticked(&s, 1);
@@ -3836,6 +3936,48 @@ mod tests {
             powered.load(Ordering::Relaxed),
             "poweroff must have been asked for"
         );
+    }
+
+    #[tokio::test]
+    async fn low_battery_never_powers_off_or_arms_a_limp_robot() {
+        // Fail at the actual I/O boundary if any path tries to apply torque.
+        struct NoArmIo(FakeIo, Arc<AtomicU32>);
+        impl RobotIo for NoArmIo {
+            fn read(&mut self) -> duck_control::io::Result<duck_control::io::Sensors> { self.0.read() }
+            fn write(&mut self, t: &duck_control::io::JointTargets) -> duck_control::io::Result<()> { self.0.write(t) }
+            fn set_gain(&mut self, kp: u16) -> duck_control::io::Result<()> { self.0.set_gain(kp) }
+            fn set_joint_gain(&mut self, j: usize, kp: u16) -> duck_control::io::Result<()> { self.0.set_joint_gain(j, kp) }
+            fn set_torque(&mut self, on: bool) -> duck_control::io::Result<()> {
+                assert!(!on, "low battery must not arm a limp robot");
+                self.1.fetch_add(1, Ordering::Relaxed);
+                self.0.set_torque(on)
+            }
+            fn slow_sensors(&mut self) -> duck_control::io::Result<duck_control::io::SlowSensors> { self.0.slow_sensors() }
+        }
+        let mut params = Params::default();
+        params.policy.enabled = false;
+        params.audio.enabled = false;
+        params.safety.low_battery_sit = true;
+        // The new sit-only mode takes precedence even over an old enabled shutdown flag.
+        params.safety.battery_empty_shutdown = true;
+        let state = Arc::new(RobotState::new(&params, false, false));
+        state.battery_v.store(6.1f64.to_bits(), Ordering::Relaxed);
+        let intents = Arc::new(Intents::new());
+        intents.request_init(None);
+        let powered = Arc::new(AtomicBool::new(false));
+        let observed = powered.clone();
+        let torque_off = Arc::new(AtomicU32::new(0));
+        let handle = tokio::spawn(control_loop(
+            NoArmIo(FakeIo::at(DEFAULT_POSITION), torque_off.clone()), state.clone(), intents.clone(), params,
+            Duration::from_millis(2), Arc::new(move || observed.store(true, Ordering::Relaxed))));
+        tokio::time::sleep(Duration::from_millis(60)).await;
+        intents.set_enabled(true);
+        tokio::time::sleep(Duration::from_millis(60)).await;
+        state.shutdown.store(true, Ordering::Relaxed);
+        handle.await.unwrap();
+        assert!(!powered.load(Ordering::Relaxed));
+        assert!(torque_off.load(Ordering::Relaxed)>0, "fault path must actually write torque off");
+        assert!(!intents.snapshot().enabled);
     }
 
     /// Subscribing answers with the policy this process is running.

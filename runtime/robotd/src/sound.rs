@@ -139,6 +139,8 @@ pub struct Sound {
     ride: Ride,
     /// Bank missing is logged once, not per press.
     warned_missing: bool,
+    /// A latched low-battery warning owns audio until robotd restarts.
+    low_battery_latched: bool,
     /// The score position currently rendered by the singing thread.
     live: Option<Arc<Live>>,
     /// The piece and part being sung, so a tick that asks for the same one does not restart the
@@ -160,6 +162,7 @@ impl Sound {
             wheee_volume: Arc::new(AtomicU64::new(1.0f64.to_bits())),
             ride: Ride::Off,
             warned_missing: false,
+            low_battery_latched: false,
             live: None,
             singing: None,
             personality: None,
@@ -231,9 +234,18 @@ impl Sound {
         }
     }
 
+    /// Interrupt entertainment and launch the warning without waiting for playback.
+    pub fn low_battery(&mut self) {
+        if self.low_battery_latched { return; }
+        self.stop_child();
+        self.play("low_battery", false);
+        self.low_battery_latched = true;
+    }
+
     /// Play a voice-bank sound, cutting off any still-playing one. `blocking` waits for
     /// playback — used right before poweroff so the goodbye peck is heard.
     pub fn play(&mut self, tag: &str, blocking: bool) {
+        if self.low_battery_latched && !blocking { return; }
         // A ride owns the single-client PCM for as long as it lasts. Cutting it for a
         // 200 ms chirp would restart the wheee from its start segment on every press of the
         // other trigger — and holding both triggers is the expected way to use them, since
@@ -281,6 +293,7 @@ impl Sound {
         score: &sounds::chorale::Score,
         part: sounds::chorale::Part,
     ) -> bool {
+        if self.low_battery_latched { return false; }
         if self.ride == Ride::Singing
             && self.singing.as_ref() == Some(&(score.name.clone(), part))
             && self.live.is_some()
@@ -483,6 +496,7 @@ impl Sound {
     }
 
     pub fn wheee(&mut self, hold: WheeeHold) {
+        if self.low_battery_latched { return; }
         // Singing owns the PCM until it ends.
         if self.ride == Ride::Singing {
             return;
@@ -698,6 +712,22 @@ mod tests {
         assert_eq!(rate, sounds::SR);
         assert_eq!(pcm.len(), 480 * 2, "S16LE mono payload");
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn low_battery_interrupts_entertainment_and_cannot_be_restarted() {
+        let mut sound = Sound::new(PathBuf::from("/nonexistent/bank"), "null".into());
+        sound.ride = Ride::Riding;
+        sound.wheee_held.store(true, Ordering::Relaxed);
+        sound.low_battery();
+        assert!(sound.low_battery_latched);
+        assert_eq!(sound.ride, Ride::Off);
+        assert!(!sound.wheee_held.load(Ordering::Relaxed));
+        sound.wheee(WheeeHold::Held);
+        sound.play("chirp", false);
+        sound.low_battery();
+        assert_eq!(sound.ride, Ride::Off);
+        assert!(sound.child.is_none());
     }
 
     /// A missing bank must degrade to silence, not errors — robots without a codec walk on.

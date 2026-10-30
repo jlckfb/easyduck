@@ -661,6 +661,10 @@ pub struct SafetyParams {
     /// (6.6 V — `duck_control::model::BATTERY_EMPTY_V`). The EMA moves over ~10 s, so a
     /// load sag cannot trip it.
     pub battery_empty_shutdown: bool,
+    /// Sit and warn once without powering off. Latched until robotd restarts.
+    pub low_battery_sit: bool,
+    /// Trigger on the smoothed motor-bus voltage (2S pack), inclusive.
+    pub low_battery_voltage: f64,
 
     /// Go limp *while falling*, to land soft instead of fighting the floor all the way
     /// down. **On by default** since it was validated on a robot — the whole point is that
@@ -817,6 +821,8 @@ impl Default for SafetyParams {
             // seconds after boot (amber then dead, like a short). 5 V is the correct servo
             // rail, not an empty battery, so no automatically-triggered poweroff here.
             battery_empty_shutdown: false,
+            low_battery_sit: false,
+            low_battery_voltage: 6.2,
             limp_fall: true,
             limp_fall_tilt_z: -0.90,
             limp_fall_predict_z: -0.5,
@@ -941,6 +947,8 @@ impl Default for UpdateGate {
 
 #[derive(Debug, thiserror::Error)]
 pub enum ParamsError {
+    #[error("{path}: safety.low_battery_voltage must be finite and between 6.0 and 8.2 V, got {got}")]
+    BatteryVoltage { path: String, got: f64 },
     #[error("{path}: invalid IMU configuration: {message}")]
     Imu {path:String,message:String},
     #[error("reading {path}: {source}")]
@@ -1040,6 +1048,10 @@ impl Params {
     /// Reject values that would produce a loop that cannot work, at startup rather than as
     /// a division by zero three seconds later.
     fn validate(&self, path: &Path) -> Result<(), ParamsError> {
+        let v = self.safety.low_battery_voltage;
+        if !v.is_finite() || !(6.0..=8.2).contains(&v) {
+            return Err(ParamsError::BatteryVoltage { path: path.display().to_string(), got: v });
+        }
         let m=&self.imu;
         let valid=match m.model.as_str() {
             "lsm6dsv16x"=>[0x6a,0x6b].contains(&m.i2c_addr)&&["sflp","comp"].contains(&m.fusion.as_str()),
@@ -1266,6 +1278,19 @@ mod tests {
         assert_eq!(media.quality.size(), (1280, 720));
         assert_eq!(media.quality.fps(), 30);
         assert_eq!(media.bitrate_resolved(), 2_000_000);
+    }
+
+    #[test]
+    fn low_battery_threshold_is_configurable_and_validated() {
+        let mut p: Params = toml::from_str("[safety]\nlow_battery_sit=true\nlow_battery_voltage=6.2").unwrap();
+        assert!(p.safety.low_battery_sit);
+        assert_eq!(p.safety.low_battery_voltage, 6.2);
+        assert_eq!(Params::default().safety.low_battery_voltage, 6.2);
+        assert!(p.validate(Path::new("test")).is_ok());
+        for v in [0.0, -1.0, f64::NAN, f64::INFINITY, 8.3] {
+            p.safety.low_battery_voltage = v;
+            assert!(matches!(p.validate(Path::new("test")), Err(ParamsError::BatteryVoltage { .. })));
+        }
     }
 
     /// The shipped example must agree with the built-in defaults, or the file documents a

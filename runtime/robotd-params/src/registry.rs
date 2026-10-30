@@ -232,6 +232,8 @@ pub const REGISTRY: &[Entry] = &[
         Kind::Integer,
         "The gain limp-fall yields at",
     ),
+    feature("safety.low_battery_sit", Kind::Bool, "Sit and warn once on low battery, without poweroff"),
+    entry("safety.low_battery_voltage", Kind::Float, "Low battery sitting threshold in volts"),
     feature(
         "safety.battery_empty_shutdown",
         Kind::Bool,
@@ -565,6 +567,7 @@ mod tests {
                 "policy.enabled",
                 "policy.mode",
                 "policy.voltage_adapt",
+                "safety.low_battery_sit",
                 "safety.battery_empty_shutdown",
                 "safety.limp_fall",
                 "safety.joint_limit_clamp",
