@@ -134,8 +134,11 @@ $('imu').textContent=s.imu_ok==null?'未知':s.imu_ok?'就绪':'未就绪';
 $('mode').textContent=modeLabel[s.mode]||s.mode;
 $('online-dot').classList.toggle('online',fresh);$('connection-label').textContent=fresh?'机器人在线':'状态未就绪';
 const phase=s.state?.policy;
-const driveButton=document.querySelector('[data-mode=policy]');driveButton.querySelector('b').textContent=phase==='xgo_walk'?'行走已开启':'开启行走';driveButton.disabled=!webAllowed||phase==='xgo_walk';
-const phases={xgo_off:'策略已关闭',held:'保持姿态',stand:'站姿',xgo_walk:'行走模式',xgo_getup:'倒地恢复中',xgo_default_pose:'准备起身',xgo_sit:'坐姿',xgo_rise:'起立中',xgo_pick:'捡物中',xgo_roulade:'滚翻中',xgo_jump:'跳跃中',limp:'已断力'};
+// A running posture/pick/recovery is still an enabled policy. Older daemons
+// lack the gate field; only infer enabled from phases that actually run a model.
+const policyEnabled=typeof s.enabled==='boolean'?s.enabled:['xgo_walk','xgo_sit','xgo_rise','xgo_pick','xgo_getup','xgo_default_pose'].includes(phase);
+const driveButton=document.querySelector('[data-mode=policy]');driveButton.querySelector('b').textContent=policyEnabled?'行走已开启':'开启行走';driveButton.disabled=!webAllowed||policyEnabled;
+const phases={xgo_off:'策略已关闭',xgo_hold:'保持姿态',held:'保持姿态',stand:'站姿',xgo_walk:'行走模式',xgo_getup:'倒地恢复中',xgo_default_pose:'准备起身',xgo_sit:'坐姿',xgo_rise:'起立／站姿保持',xgo_pick:'捡物中',xgo_roulade:'滚翻中',xgo_jump:'跳跃中',limp:'已断力'};
 $('robot-phase').textContent=phases[phase]||(phase?'其他状态':'等待读取状态');
 const voltage=s.health?.battery?.volts;
 const percent=s.health?.battery?.percent;
@@ -145,7 +148,7 @@ $('use-web').disabled=webAllowed;$('use-pad').disabled=control.preference==='aut
 for(const zone of document.querySelectorAll('.joy'))zone.setAttribute('aria-disabled',String(!webAllowed));
 $('call').disabled=!webAllowed;$('speed').disabled=!webAllowed;$('head-zero').disabled=!webAllowed;
 if(Date.now()>noticeUntil){$('message').textContent=s.last_error||(webAllowed?'摇杆松手停止移动；动作按钮按一次执行一次。':'网页未接管，摇杆与动作按钮暂不可用。');$('message').classList.toggle('error',!!s.last_error);}
-for(const button of document.querySelectorAll('[data-skill]')){button.hidden=!s.models?.[button.dataset.model];button.disabled=skillBusy||!webAllowed||phase!=='xgo_walk'&&!(button.dataset.skill==='sit_toggle'&&phase==='xgo_sit');}
+for(const button of document.querySelectorAll('[data-skill]')){button.hidden=!s.models?.[button.dataset.model];button.disabled=skillBusy||!webAllowed||!policyEnabled||phase!=='xgo_walk'&&!(button.dataset.skill==='sit_toggle'&&['xgo_sit','xgo_rise'].includes(phase))&&!(button.dataset.skill==='ground_pick'&&phase==='xgo_rise');}
 
 
 const state=s.state||{},recovery=s.recovery||{};

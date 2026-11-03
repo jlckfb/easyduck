@@ -1439,13 +1439,14 @@ async fn control_loop<T: RobotIo>(
                 tracing::warn!("low battery: sitting model unavailable; cutting torque");
             }
         }
+        let xgo_imu_ready = !xgo_profile || safety.imu_ready();
         if xgo_profile && bringup != Bringup::Limp &&
             (tick_start.duration_since(xgo_last_feedback)>Duration::from_millis(150)
-             || (!low_battery.active() && snapshot.twist_age>Duration::from_secs(1) && !intents.control_hold.load(Ordering::Acquire)) || !safety.imu_ready()) {
+             || (!low_battery.active() && snapshot.twist_age>Duration::from_secs(1) && !intents.control_hold.load(Ordering::Acquire)) || !xgo_imu_ready) {
             intents.request_relax();
             snapshot.enabled=false;
             tracing::warn!(feedback_age_ms=tick_start.duration_since(xgo_last_feedback).as_millis() as u64,
-                command_age_ms=snapshot.twist_age.as_millis() as u64, imu_ready=safety.imu_ready(),
+                command_age_ms=snapshot.twist_age.as_millis() as u64, imu_ready=xgo_imu_ready,
                 "xgoduck disarm: feedback >150ms, command >1s, or IMU unavailable; see preceding bus/servo alarm");
         }
         if low_battery.active() {
@@ -2360,6 +2361,7 @@ async fn control_loop<T: RobotIo>(
                 },
                 head: command.head,
                 policy: policy_label.to_owned(),
+                enabled: Some(snapshot.enabled && intents.enabled()),
                 safety: proto::SafetyState {
                     fallen: safety.fallen() || (xgo_profile && snapshot.enabled && controller.as_ref().is_some_and(|c|c.xgo_recovering())),
                     // Limp means "the robot is actually at limp gain" — which now happens
@@ -4313,6 +4315,7 @@ mod tests {
         s.shutdown.store(true, Ordering::Relaxed);
         handle.await.unwrap();
 
+        assert_eq!(frame.enabled,Some(true),"policy gate survives a temporary hold");
         assert_eq!(
             frame.movement.requested,
             [0.4, 0.0, 0.0],

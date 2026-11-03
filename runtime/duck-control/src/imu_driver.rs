@@ -3,7 +3,7 @@ use crate::imu::{ImuData, mul, rotate, rotate_inverse};
 use std::{
     io,
     sync::{
-        Arc, Mutex,
+        Arc,
         atomic::{AtomicBool, Ordering},
     },
     thread,
@@ -286,8 +286,10 @@ impl Processor {
         }
     }
 }
+// The worker publishes whole immutable snapshots; control reads never contend
+// with a publisher lock or wait for device I/O.
 pub struct Reader {
-    state: Arc<Mutex<Status>>,
+    state: Arc<arc_swap::ArcSwap<Status>>,
     stop: Arc<AtomicBool>,
     worker: Option<thread::JoinHandle<()>>,
     cal: Calibration,
@@ -295,7 +297,7 @@ pub struct Reader {
 impl Reader {
     pub fn start(c: I2cImuConfig, cal: Calibration) -> io::Result<Self> {
         c.validate()?;
-        let state = Arc::new(Mutex::new(Status::default()));
+        let state = Arc::new(arc_swap::ArcSwap::from_pointee(Status::default()));
         let stop = Arc::new(AtomicBool::new(false));
         let shared = state.clone();
         let quit = stop.clone();
@@ -305,10 +307,11 @@ impl Reader {
                 let mut d = match open(&c) {
                     Ok(d) => d,
                     Err(e) => {
-                        if let Ok(mut s) = shared.lock() {
-                            tracing::warn!(model=%c.model,error=%e,"IMU initialization failed");
-                            s.error = Some(format!("{}: {e}", c.model));
-                        }
+                        tracing::warn!(model=%c.model,error=%e,"IMU initialization failed");
+                        shared.store(Arc::new(Status {
+                            error: Some(format!("{}: {e}", c.model)),
+                            ..Status::default()
+                        }));
                         return;
                     }
                 };
@@ -353,19 +356,17 @@ impl Reader {
                         }
                         last_error = status.error.clone();
                     }
-                    if let Ok(mut s) = shared.lock() {
-                        *s = status;
-                    }
+                    shared.store(Arc::new(status));
                     // park is interruptible by Drop; no device lock is held during I/O or waiting.
                     thread::park_timeout(Duration::from_millis(backoff));
                 }
                 let result = d.close();
-                if let Ok(mut s) = shared.lock() {
-                    s.connected = false;
-                    if let Err(e) = result {
-                        s.error = Some(e.to_string());
-                    }
+                let mut status = (**shared.load()).clone();
+                status.connected = false;
+                if let Err(e) = result {
+                    status.error = Some(e.to_string());
                 }
+                shared.store(Arc::new(status));
             })?;
         Ok(Self {
             state,
@@ -375,7 +376,7 @@ impl Reader {
         })
     }
     pub fn status(&self) -> Option<Status> {
-        self.state.try_lock().ok().map(|s| s.clone())
+        Some((**self.state.load()).clone())
     }
     pub fn read_sample(&self) -> Option<ImuData> {
         let s = self.status()?;
@@ -404,6 +405,27 @@ impl Drop for Reader {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn status_publication_does_not_make_a_fresh_sample_unavailable() {
+        let now=Instant::now();
+        let status=Status { sample:Sample {
+            quat:Some(Timed {value:[1.,0.,0.,0.],at:now}),
+            gyro:Some(Timed {value:[0.;3],at:now}),accel:None,
+        },connected:true,..Status::default() };
+        let reader=Reader {state:Arc::new(arc_swap::ArcSwap::from_pointee(status)),stop:Arc::new(AtomicBool::new(false)),
+            worker:None,cal:Calibration {mount:[1.,0.,0.,0.],bias:[0.;3],confirmed:true}};
+        let previous=reader.state.load();
+        reader.state.store(Arc::new((**previous).clone()));
+        assert!(reader.ready(),"publishing a status must not invalidate fresh IMU data");
+        // A held old snapshot must not hide a newly published device error.
+        let mut failed=(**previous).clone();failed.error=Some("read failed".into());
+        reader.state.store(Arc::new(failed));assert!(!reader.ready());
+        reader.state.store(Arc::new((**previous).clone()));assert!(reader.ready());
+        let mut stale=(**previous).clone();
+        stale.sample.quat.as_mut().unwrap().at=now-Duration::from_millis(151);
+        reader.state.store(Arc::new(stale));assert!(!reader.ready());
+    }
+
     fn vec<const N: usize>(v: &serde_json::Value) -> [f64; N] {
         std::array::from_fn(|i| v[i].as_f64().unwrap())
     }

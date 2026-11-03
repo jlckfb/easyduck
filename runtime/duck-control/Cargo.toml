@@ -6,6 +6,7 @@ license.workspace = true
 description = "Robot control core: model, bus, sensing"
 
 [dependencies]
+arc-swap = "1"
 serde_json.workspace = true
 libc = "0.2"
 # For `JOINT_NAMES` alone. The joint *order* is protocol — the state stream carries

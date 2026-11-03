@@ -2309,6 +2309,10 @@ pub struct RobotState {
     pub head: [f64; 4],
     /// Which policy drove this tick: `walk`, `stand`, or `held` when none did.
     pub policy: String,
+    /// Actual policy gate, independent of the current action or a temporary hold.
+    /// Missing on older daemons; clients must not confuse the last request with this state.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enabled: Option<bool>,
     pub safety: SafetyState,
     #[serde(rename = "loop")]
     pub control_loop: LoopState,
@@ -4102,6 +4106,7 @@ mod tests {
             },
             head: [0.0; 4],
             policy: "walk".into(),
+            enabled: Some(true),
             safety: SafetyState {
                 fallen: false,
                 limp: false,
@@ -4128,6 +4133,10 @@ mod tests {
         let back: Request = serde_json::from_str(&line).unwrap();
         assert!(back.is_notification(), "state carries no id");
         assert_eq!(back.as_state().unwrap(), state);
+        let mut legacy=serde_json::to_value(&state).unwrap();
+        legacy.as_object_mut().unwrap().remove("enabled");
+        let legacy:RobotState=serde_json::from_value(legacy).unwrap();
+        assert_eq!(legacy.enabled,None,"old daemons do not report a policy gate");
     }
 
     /// An unlimited command must not carry an empty array — a consumer checking

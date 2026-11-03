@@ -38,6 +38,14 @@ class GatewayTests(unittest.TestCase):
     def arm(self):
         self.claim();self.request('mode',{'mode':'policy'});self.rpc.calls.clear()
     def command(self):return {'twist':[.2,0,.5],'head':[.1,.2,-.3,.4],'mouth':15}
+    def test_status_reports_policy_enable_separately_from_action_phase(self):
+        self.gateway.snapshot.update({'policy':'xgo_rise','enabled':True})
+        self.assertIs(self.gateway.status('browser')['enabled'],True)
+        self.gateway.snapshot.update({'policy':'xgo_hold','enabled':True})
+        self.assertIs(self.gateway.status('browser')['enabled'],True)
+        self.gateway.snapshot.update({'policy':'xgo_off','enabled':False})
+        self.assertIs(self.gateway.status('browser')['enabled'],False)
+
     def test_page_status_and_unclaimed_command_send_no_motion(self):
         self.gateway.status('browser')
         self.assertFalse(self.request('command',self.command())['forwarded'])

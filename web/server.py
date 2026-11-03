@@ -438,7 +438,7 @@ class Gateway:
             if gravity and math.sqrt(sum(v*v for v in gravity)) > 0:
                 angle = math.degrees(math.acos(max(-1, min(1,
                     -gravity[2] / math.sqrt(sum(v*v for v in gravity))))))
-            return {**view, 'control': self.control, 'this_page': client==self.session, 'mode': self.mode, 'enabled': None,
+            return {**view, 'control': self.control, 'this_page': client==self.session, 'mode': self.mode, 'enabled': state.get('enabled'),
                     'feedback_hz': view['received_hz'], 'inference_hz': None,
                     'loop_hz': state.get('loop', {}).get('hz'), 'servo_ids': None,
                     'imu_ok': health.get('imu', {}).get('ready'),

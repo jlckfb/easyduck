@@ -136,9 +136,12 @@ impl Flow {
     }
 
     pub fn start_pick(&mut self) -> Result<(), &'static str> {
-        if self.posture_sit.is_some() { return Err("return to walking before pick"); }
+        if self.posture_sit == Some(true) { return Err("stand before pick"); }
         if self.phase != Phase::Walk { return Err("pick only while walking upright"); }
         if self.roulade_until.is_some() { return Err("pick unavailable during roulade"); }
+        // An explicit pick can leave commanded STAND just as walking input can.
+        // Do not clear posture on refused requests (seated, recovery or rolling).
+        self.posture_sit = None;
         self.pick_phi = Some(0.0);
         self.mouth = Some(1.0);
         self.reset_policy = true;
@@ -537,6 +540,32 @@ mod commanded_posture_tests {
         assert_eq!(stand.network,Network::Posture);assert_eq!(stand.twist,[0.0;3]);assert!(!stand.reset);
         let walk=f.frame(UP,0.04,true,[0.0,0.55,0.0],[0.0;4],0.0).unwrap();
         assert_eq!(walk.network,Network::Walk);assert!(walk.reset);assert_eq!(f.posture_sit,None);
+    }
+    #[test]
+    fn standing_posture_can_start_pick_without_a_walking_command() {
+        let mut f=Flow::default();
+        f.toggle_posture().unwrap();f.toggle_posture().unwrap();
+        let stand=f.frame(UP,0.0,true,[0.0;3],[0.0;4],0.0).unwrap();
+        assert_eq!(stand.network,Network::Posture);f.inferred(&stand);
+        assert_eq!(f.start_pick(),Ok(()));assert_eq!(f.posture_sit,None);
+        let pick=f.frame(UP,0.02,true,[0.0;3],[0.0;4],0.0).unwrap();
+        assert_eq!(pick.network,Network::Pick);assert!(pick.reset);
+        for i in 1..=200 {
+            let frame=f.frame(UP,i as f64*0.02,true,[0.0;3],[0.0;4],0.0).unwrap();
+            f.inferred(&frame);
+        }
+        assert_eq!(f.frame(UP,4.1,true,[0.0;3],[0.0;4],0.0).unwrap().network,Network::Walk);
+    }
+    #[test]
+    fn pick_cannot_exit_a_seated_or_recovering_posture() {
+        let mut f=Flow::default();f.toggle_posture().unwrap();
+        assert!(f.start_pick().is_err());assert_eq!(f.posture_sit,Some(true));
+        f.toggle_posture().unwrap();f.phase=Phase::Getup;
+        assert!(f.start_pick().is_err());assert_eq!(f.posture_sit,Some(false));
+        f.phase=Phase::Walk;f.roulade_until=Some(10.0);
+        assert!(f.start_pick().is_err());assert_eq!(f.posture_sit,Some(false));
+        f.roulade_until=None;f.request_sit();
+        assert!(f.start_pick().is_err());assert!(f.low_battery_sit);
     }
     #[test]
     fn sitting_ignores_walking_request_and_recovery_preempts_posture() {

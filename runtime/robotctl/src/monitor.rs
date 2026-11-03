@@ -3577,6 +3577,7 @@ mod tests {
             },
             head: [0.0; 4],
             policy: "stand".to_owned(),
+            enabled: None,
             safety: proto::SafetyState {
                 fallen: false,
                 limp: false,
