@@ -174,6 +174,12 @@ function applyAccess(data) {
     const settings = textNode('a', 'http://' + wifi.ip + (location.port && location.port !== '80' ? ':' + location.port : '') + '/', 'access-link'); settings.href = settings.textContent;
     access.append(link, settings, textNode('div', 'ssh ' + data.login_user + '@' + wifi.ip, 'access-address'));
   } else access.append(textNode('p', '连接 Wi-Fi 后，这里会显示无线控制网页和 SSH 地址。', 'note'));
+  const localName = data.network_access?.hostname;
+  if (wirelessReady && typeof localName === 'string' && /^[a-zA-Z0-9-]+\.local$/.test(localName)) {
+    const fixed = textNode('a', '固定控制地址：http://' + localName + ':9527/', 'access-link');
+    fixed.href = 'http://' + localName + ':9527/'; access.append(fixed);
+    access.append(textNode('p', '连接或 IP 改变后会播报地址；策略运行时延后播报。手机不支持固定网址时，使用播报的 IP。', 'note'));
+  }
   const control = $('current-control'); control.href = controlTarget.href; control.hidden = false;
   const calibration = $('open-calibration');
   const calibrationTarget = new URL(controlTarget.href); calibrationTarget.searchParams.set('target','calibration');

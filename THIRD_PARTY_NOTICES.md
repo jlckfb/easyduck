@@ -35,3 +35,9 @@
 当前依赖表记录 169 个 Rust 生产／构建依赖的许可表达式，不等于完整的二进制许可包。分发时仍须补齐适用版权和许可原文、MPL 对应源码取得说明，以及镜像内 Linux、Debian 软件包和 ONNX Runtime 的许可材料。
 
 IMU 接口整理：保留 LSM Python 文件原 GPL-3.0-or-later 署名；BNO085 为依据 CEVA SH-2/SHTP 协议的独立实现。教程固定版本的 `imu_reader.py` 文件自身为 GPL-3.0-or-later（Marc Duclusaud），并非教程根目录的 MIT。参考链接与坐标边界见 [IMU 驱动说明](docs/imu-drivers.md)，未新增第三方依赖。
+
+## 局域网名称与离线 IP 播报
+
+此功能调用 Debian 的 `avahi-daemon`（Avahi，主要为 LGPL-2.1-or-later）和 `espeak-ng`（eSpeak NG，GPL-3.0-or-later），通过独立进程提供名称发现和离线语音，不使用云端接口。本仓库未内嵌其引擎或语音数据。镜像安装时保留发行版包的版权、许可证和版本记录，原文位于 `/usr/share/doc/avahi-daemon/copyright`、`/usr/share/doc/espeak-ng/copyright` 及相应依赖包目录；各文件的具体许可以这些原始版权文件为准。
+
+来源：[Avahi](https://github.com/avahi/avahi)、[eSpeak NG](https://github.com/espeak-ng/espeak-ng)。随镜像再分发仍需履行对应源码提供等适用义务，调用方式不免除这些义务。

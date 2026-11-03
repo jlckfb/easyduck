@@ -29,7 +29,9 @@
       "systemd and systemd-sysusers",
       "ALSA utilities: aplay and amixer",
       "libudev runtime",
-      "BlueZ and Linux input subsystem"
+      "BlueZ and Linux input subsystem",
+      "Avahi daemon: offline .local name discovery",
+      "eSpeak NG: offline Mandarin address synthesis"
     ],
     "onnxruntime": {
       "minimum_version": "1.23",

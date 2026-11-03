@@ -15,7 +15,7 @@ target=Path(args.root).resolve()
 if not 1<=args.port<=65535:parser.error('Invalid port')
 if target==Path('/'):
     if os.geteuid()!=0:parser.error('Run as root for board installation')
-    for program in ('nmcli','bluetoothctl','systemctl'):
+    for program in ('nmcli','bluetoothctl','systemctl','avahi-daemon','espeak-ng','aplay','busctl'):
         if not shutil.which(program):parser.error('Missing system dependency: '+program)
     if subprocess.run(['systemctl','is-active','--quiet','easyduck-setup.service']).returncode:
         with socket.socket() as probe:
@@ -28,7 +28,9 @@ if not re.fullmatch(r'[0-9.]+',args.host):parser.error('Use an IPv4 bind address
 entries=[(source/name,Path('opt/robot/setup')/name) for name in ('first_setup.py','connections.py','navigation.py')]
 entries.extend((source.parent/name,Path('opt/robot/deploy')/name) for name in ('network_routes.py','navigation-client.js'))
 entries.extend((p,Path('opt/robot/setup/static')/p.name) for p in sorted((source/'static').iterdir()) if p.is_file())
-for name in ('easyduck-setup.service','easyduck-gamepad-reconnect.service','easyduck-gamepad-reconnect.timer'):
+entries.append((source.parent/'network-access/network_access.py',Path('opt/robot/network-access/network_access.py')))
+entries.append((source.parent/'network-access/avahi-daemon.conf',Path('etc/avahi/easyduck.conf')))
+for name in ('easyduck-setup.service','easyduck-gamepad-reconnect.service','easyduck-gamepad-reconnect.timer','easyduck-network-access.service','avahi-daemon.service.d/50-easyduck.conf'):
     entries.append((source.parent/'systemd'/name,Path('etc/systemd/system')/name))
 if any(not src.is_file() for src,_ in entries):parser.error('Installation source is incomplete')
 def destination(relative):
@@ -65,6 +67,6 @@ for record in records:
 print('Installed connection setup. Rollback manifest:',backup/'manifest.json')
 if target==Path('/'):
     subprocess.run(['systemctl','daemon-reload'],check=True)
-    subprocess.run(['systemctl','enable','--now','easyduck-setup.service','easyduck-gamepad-reconnect.timer'],check=True)
+    subprocess.run(['systemctl','enable','--now','easyduck-setup.service','easyduck-gamepad-reconnect.timer','avahi-daemon.service','easyduck-network-access.service'],check=True)
     subprocess.run(['systemctl','restart','easyduck-setup.service'],check=True)
 PY

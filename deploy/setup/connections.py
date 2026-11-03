@@ -381,4 +381,11 @@ class Backend:
             break
 
     def status(self):
-        return {'wifi': self.wifi_status(), 'bluetooth': self.bluetooth_status(), 'hostname': os.uname().nodename}
+        access = {}
+        try:
+            access = json.loads(Path('/run/easyduck-network/status.json').read_text())
+            if not isinstance(access, dict): access = {}
+        except (OSError, ValueError):
+            pass
+        return {'wifi': self.wifi_status(), 'bluetooth': self.bluetooth_status(),
+                'hostname': os.uname().nodename, 'network_access': access}
