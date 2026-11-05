@@ -68,6 +68,8 @@ def mapping(profile, binaries):
     tree(ROOT / 'config' / profile, 'etc/robot')
     tree(ROOT / 'deploy/systemd', 'etc/systemd/system')
     tree(ROOT / 'deploy/sysusers.d', 'usr/lib/sysusers.d')
+    tree(ROOT / 'deploy/modules-load.d', 'etc/modules-load.d')
+    result.append((ROOT / 'deploy/kernel/check_gamepad.py', Path('opt/robot/deploy/check_gamepad.py')))
     tree(ROOT / 'deploy/alsa', 'var/lib/alsa')
     result.append((ROOT / 'LICENSE', Path('opt/robot/licenses/LICENSE')))
     result.append((ROOT / 'NOTICE', Path('opt/robot/licenses/NOTICE')))

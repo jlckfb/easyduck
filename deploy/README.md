@@ -136,3 +136,7 @@ sudo python3 deploy/rollback.py --root / --backup /var/lib/easyduck/backups/<编
 ## 首次配网与手柄连接
 
 连接设置页通过 NetworkManager 和 BlueZ 配置 Wi-Fi 与 PS5 手柄，可使用设备的 USB、无线或以太网地址访问。独立安装、自动重连及验收步骤见 [连接设置说明](setup/README.md)。
+
+## USB / 2.4G gamepads
+
+[接收器连接、内核配置与镜像验收](../docs/gamepad-usb.md)。应用安装不代替匹配内核的 xpad 模块构建；SDK 打包时会检查模块、启动加载规则及 USB 别名。
