@@ -1,5 +1,7 @@
 # USB / 2.4G 手柄支持
 
+[English](../en/usb-gamepad.md) | **简体中文**
+
 2.4G 手柄通过配套 USB 接收器接入开发板，不通过网页蓝牙扫描配对。当前验证过的接收器在手柄连接后呈现为 `045e:028e Microsoft X-Box 360 pad`，由 Linux `xpad` 驱动转换为标准输入事件，EasyDuck 的 `padd` 使用现有通用手柄接口读取。
 
 仓库中的 `deploy/kernel/easyduck-gamepad.config` 是内核配置输入；SDK 负责使用它编译与内核版本匹配的 `xpad.ko`，并将内核模块及 depmod 索引放入镜像。应用安装器安装 `deploy/modules-load.d/easyduck-gamepad.conf`，使驱动随开机加载。只安装应用文件或只修改配置片段，不能代替内核模块构建。

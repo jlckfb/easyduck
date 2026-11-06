@@ -1,4 +1,4 @@
-"""Independent SH-2/SHTP implementation; protocol references: docs/imu-drivers.md."""
+"""Independent SH-2/SHTP implementation; protocol references: docs/en/imu-drivers.md."""
 import struct
 import time
 from .transport import I2c

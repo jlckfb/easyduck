@@ -1,21 +1,24 @@
 # 软件使用说明
 
+[English](../en/software-guide.md) | **简体中文**
+
 ## 运行结构
 
 ```text
 网页（9527）/ 手柄 padd → robotd → HD1910 舵机（/dev/ttyS3）
-                              → LSM6DSV16X IMU（/dev/i2c-2）
+                              → LSM6DSV16X / BNO085 IMU（默认 /dev/i2c-2）
                               → ONNX 动作模型、音效
 标定台（8766）→ 独占舵机串口与 IMU
 ```
 
-`robotd` 负责主控制，`padd` 读取手柄，`robotctl` 提供状态查询和命令行操作，`sounds` 生成音效。网页和标定台是 Python 服务。
+`robotd` 负责主控制，`padd` 读取手柄，`robotctl` 提供状态查询和命令行操作，`sounds` 生成音效。网页和标定台是 Python 服务。除另有说明，命令在仓库根目录执行。
 
 ## 系统与依赖
 
-- 主板：泰山派 1M，Linux ARM64；舵机：HD1910；IMU：LSM6DSV16X。
-- 板端需要 UART3 GPIO116 半双工支持、Python 3.9+、ONNX Runtime 1.23 或以上、ALSA 工具 `aplay`/`amixer` 以及 systemd。串口补丁见 `deploy/kernel/`。
+- 主板：泰山派 1M，Linux ARM64；舵机：HD1910；IMU：LSM6DSV16X 或 BNO085，按实际型号配置，见 [IMU 驱动说明](imu-drivers.md)。
+- 板端完整运行环境需要 UART3 GPIO116 半双工支持、Python 3.11+、ONNX Runtime 1.23 或以上、libudev、ALSA 工具 `aplay`/`amixer` 以及 systemd。串口补丁见 `deploy/kernel/`。
 - 蓝牙手柄需要系统 BlueZ、`bluetooth.service` 和输入设备权限；`padd` 直接读取输入事件。
+- 已验证的 USB / 2.4G 接收器需要匹配板端内核的 `xpad` 驱动和开机加载规则；只安装应用不能补齐内核驱动，见 [USB 手柄说明](usb-gamepad.md)。
 - 编译需要 Linux、Docker、Rust、ARM64 交叉编译器和 ARM64 系统库。版本与库清单见 `deploy/dependencies.lock.json`，Rust 包版本见 `runtime/Cargo.lock`。
 
 ## 编译
@@ -28,7 +31,7 @@ docker run -d --name easyduck-build --network none easyduck-build:1.98.1
 bash deploy/build.sh
 ```
 
-创建镜像需要联网下载系统包、固定版本 Rust 和 Cargo 依赖；无需已有编译容器、sysroot 或个人 Cargo 缓存。应用构建使用 `--locked --offline`，编译容器可保持无网络。容器已存在时使用 `docker start easyduck-build`，依赖更新后重建镜像并换用新容器。完整环境说明见[编译与部署](../deploy/README.md)。
+创建镜像需要联网下载系统包、固定版本 Rust 和 Cargo 依赖；无需已有编译容器、sysroot 或个人 Cargo 缓存。应用构建使用 `--locked --offline`，编译容器可保持无网络。容器已存在时使用 `docker start easyduck-build`，依赖更新后重建镜像并换用新容器。完整环境说明见[编译与部署](deployment.md)。
 
 输出为 `build/bin/` 中的 `robotd`、`padd`、`robotctl`、`sounds`；构建日志输出到 `build/logs/`。
 
@@ -58,7 +61,7 @@ bash deploy/build.sh
 | scs_joint_gains.json | 分关节 P 增益覆盖 |
 | voice.env | 音效生成种子 |
 
-运行时配置目录为 `/etc/robot/`。主控启动时读取配置，修改后需重启服务。舵机驱动优先读取 `visual_calibration.json`。文件缺失时，使用驱动内置零点和方向，并从 `zero_pos.json` 读取限位；该文件的零点和方向必须与内置基线一致，否则启动报错。新机器应通过标定台生成匹配的 `visual_calibration.json`。配置详情见[配置说明](../config/README.md)。
+运行时配置目录为 `/etc/robot/`。主控启动时读取配置，修改后需重启服务。舵机驱动优先读取 `visual_calibration.json`。文件缺失时，使用驱动内置零点和方向，并从 `zero_pos.json` 读取限位；该文件的零点和方向必须与内置基线一致，否则启动报错。新机器应通过标定台生成匹配的 `visual_calibration.json`。配置详情见[配置说明](configuration.md)。
 
 ## 暂存安装与回退
 
@@ -109,8 +112,8 @@ systemctl daemon-reload
 ## 日常操作
 
 - 使用网页前确认 `robotd` 和 `xgoduck-web` 已启动；页面中的上力和动作按钮会控制实物。
-- 使用手柄前完成系统蓝牙配对，并启动 `padd`；网页与手柄的控制权由主控协调。
-- 只读查看可用 `robotctl robot mode --json` 或 `robotctl monitor`。命令、参数编辑与控制操作见[命令行工具说明](../runtime/robotctl/README.md)。
+- 使用蓝牙手柄前完成系统配对，或接入受支持的 USB 接收器，再启动 `padd`；网页与手柄的控制权由主控协调。
+- 只读查看可用 `robotctl robot mode --json` 或 `robotctl monitor`。命令、参数编辑与控制操作见[命令行工具说明](robotctl.md)。
 - 需要标定时执行 `systemctl start xgoduck-calibration.service`，正式控制服务会停止。结束后执行 `systemctl stop xgoduck-calibration.service`，再按启动步骤恢复正式服务。
 - 终止控制服务不等于舵机已经断力；操作或移动实物前核对断力状态。
 
@@ -120,11 +123,11 @@ systemctl daemon-reload
 
 ## 相关说明
 
-- [编译、安装与回退](../deploy/README.md)
-- [舵机与 IMU 标定台](../calibration/README.md)
-- [音效生成](../runtime/sounds/README.md)
-- [动作模型接口](../models/README.md)
-- [第三方许可证与素材来源](../THIRD_PARTY_NOTICES.md)
+- [编译、安装与回退](deployment.md)
+- [舵机与 IMU 标定台](calibration.md)
+- [音效生成](sounds.md)
+- [动作模型接口](models.md)
+- [第三方许可证与素材来源](../../THIRD_PARTY_NOTICES.md)
 
 ### 手柄前后速度
 

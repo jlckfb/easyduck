@@ -1,5 +1,5 @@
 //! BNO085 SHTP/SH-2, independently implemented from CEVA's published protocol.
-//! See docs/imu-drivers.md for references and the polling timestamp limitation.
+//! See docs/en/imu-drivers.md for references and the polling timestamp limitation.
 use crate::{
     imu_driver::{Capabilities, Driver, I2cImuConfig, Sample, Timed, normalized},
     imu_transport::I2c,

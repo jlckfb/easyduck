@@ -1,5 +1,7 @@
 # IMU 驱动与标定接口
 
+[English](../en/imu-drivers.md) | **简体中文**
+
 ## 分层与约定
 
 `runtime/duck-control/src/imu_driver.rs` 定义 `Driver`、`Sample`、`Timed`、能力与共用处理；`imu_i2c.rs` 和 `imu_bno085.rs` 只访问芯片。`scs.rs` 只从后台 Reader 取快照，不做 I²C 事务。新增型号无需修改策略、61 维输入、关节业务或主控初始化逻辑。
@@ -73,9 +75,9 @@ BNO 在读取头时出现 NACK 可以表示没有待发报告，也可能是拔�
 
 ## 添加一种 IMU
 
-1. Rust 实现 `imu_driver::Driver`，构造函数完成初始化，`read` 仅返回新报告，`close` 释放资源。参考 [Rust 最小模板](imu-driver-template.rs)。所有硬件等待必须有界。
+1. Rust 实现 `imu_driver::Driver`，构造函数完成初始化，`read` 仅返回新报告，`close` 释放资源。参考 [Rust 最小模板](../../examples/imu/imu-driver-template.rs)。所有硬件等待必须有界。
 2. 在 `imu_driver::open` 注册构造函数和配置组合，在 `robotd-params` 的 IMU 校验登记地址及融合模式；参数登记表已有通用 `imu.model`，新增专属参数才需扩充配置字段。
-3. Python 实现相同约定，在 `imu.MODELS` 登记配置组合、`open_driver` 注册构造函数，标定数学层的型号白名单一起登记。参考 [Python 最小模板](imu-driver-template.py)。不要将装配旋转放入驱动。
+3. Python 实现相同约定，在 `imu.MODELS` 登记配置组合、`open_driver` 注册构造函数，标定数学层的型号白名单一起登记。参考 [Python 最小模板](../../examples/imu/imu-driver-template.py)。不要将装配旋转放入驱动。
 4. 用两端同一组报文和几何样例验证顺序、方向、单位和时间。固定共享样例在 `runtime/duck-control/src/imu_contract_vectors.json`，Rust 源码内单元测试与本地保留的 Python 测试共同读取；不要让测试只是重复实现公式。必须额外覆盖缺失、截断、序号重放、过期、停止与错误退出。
 5. `deploy/install.py` 自动收集 `calibration/imu/` 的源码，排除测试和缓存；新增运行依赖需更新依赖清单与许可证。当前 Python 最低 3.11，使用标准库 `tomllib`，没有新增 Cargo 或第三方 Python 依赖。
 
@@ -87,4 +89,4 @@ BNO 在读取头时出现 NACK 可以表示没有待发报告，也可能是拔�
 
 BNO 协议依据 [CEVA SH-2 手册](https://www.ceva-ip.com/wp-content/uploads/SH-2-Reference-Manual.pdf) 与 [CEVA SH-2 官方实现](https://github.com/ceva-dsp/sh2)（其源码 Apache-2.0）；本仓库使用独立的 Rust/Python 实现，没有新增第三方代码依赖。
 
-核对的教程文件是 [Microduck-build-tutorial/imu_reader.py](https://github.com/AI-FanGe/Microduck-build-tutorial/blob/49678215d0b40529522772a40c06c216390449dd/microduck/src/imu_reader.py)。该文件自身声明 **GPL-3.0-or-later / Copyright 2026 Marc Duclusaud**，不能因教程根目录为 MIT 就把文件当 MIT。仅参考协议，不复制其装配旋转、树莓派总线、舵机、策略或授权边界。现有 LSM Python 文件保留原 GPL 声明；组合标定服务的发布边界沿用 [第三方声明](../THIRD_PARTY_NOTICES.md)。
+核对的教程文件是 [Microduck-build-tutorial/imu_reader.py](https://github.com/AI-FanGe/Microduck-build-tutorial/blob/49678215d0b40529522772a40c06c216390449dd/microduck/src/imu_reader.py)。该文件自身声明 **GPL-3.0-or-later / Copyright 2026 Marc Duclusaud**，不能因教程根目录为 MIT 就把文件当 MIT。仅参考协议，不复制其装配旋转、树莓派总线、舵机、策略或授权边界。现有 LSM Python 文件保留原 GPL 声明；组合标定服务的发布边界沿用 [第三方声明](../../THIRD_PARTY_NOTICES.md)。

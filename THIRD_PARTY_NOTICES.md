@@ -34,7 +34,7 @@
 
 当前依赖表记录 169 个 Rust 生产／构建依赖的许可表达式，不等于完整的二进制许可包。分发时仍须补齐适用版权和许可原文、MPL 对应源码取得说明，以及镜像内 Linux、Debian 软件包和 ONNX Runtime 的许可材料。
 
-IMU 接口整理：保留 LSM Python 文件原 GPL-3.0-or-later 署名；BNO085 为依据 CEVA SH-2/SHTP 协议的独立实现。教程固定版本的 `imu_reader.py` 文件自身为 GPL-3.0-or-later（Marc Duclusaud），并非教程根目录的 MIT。参考链接与坐标边界见 [IMU 驱动说明](docs/imu-drivers.md)，未新增第三方依赖。
+IMU 接口整理：保留 LSM Python 文件原 GPL-3.0-or-later 署名；BNO085 为依据 CEVA SH-2/SHTP 协议的独立实现。教程固定版本的 `imu_reader.py` 文件自身为 GPL-3.0-or-later（Marc Duclusaud），并非教程根目录的 MIT。参考链接与坐标边界见 [IMU 驱动说明](docs/zh-CN/imu-drivers.md)，未新增第三方依赖。
 
 ## 局域网名称与离线 IP 播报
 

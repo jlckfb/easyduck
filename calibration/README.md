@@ -1,94 +1,45 @@
-# 舵机与 IMU 标定台
+# Servo and IMU calibration service
 
-Python 3.11+ 标准库服务，默认端口 8766。IMU 从同一份 `/etc/robot/robotd.toml` 读取型号、总线、地址与融合模式（可用 `--config` 指定）；支持 LSM6DSV16X 与 BNO085，详见 [IMU 驱动接入](../docs/imu-drivers.md)。页面使用本地 three.js 显示机器人模型，提供舵机零点、方向、限位与 IMU 标定。
+**English** | [简体中文](README.zh-CN.md)
 
-默认串口 `/dev/ttyS3`，基线 `/etc/robot/zero_pos.json`，保存配置 `/etc/robot/visual_calibration.json`。正式标定服务与 `robotd`、`padd`、`xgoduck-web` 互斥；同一时刻只能有一个程序占用舵机串口。标定操作可能上力、改变姿态或写入配置，操作前承托机器人。
+## Responsibilities
 
-## 页面操作
+Runs the independent hardware workbench. It manages servo discovery/ID assignment, hardware center, HOME, direction/ranges, motion jobs, IMU installation/bias, drafts, and saved calibration. The Python backend is the hardware owner while calibration is active.
 
-标定台采用紧凑工作台。3D旁边每次只显示“准备、范围、方向”中的一个面板；整机检查独立切换，说明和手动数值默认收起。面板切换不发出硬件命令。
+## File structure
 
-### 单关节
+| File / directory | Responsibility |
+| --- | --- |
+| [server.py](server.py) | HTTP/API entry, application state, validation, and exit coordination |
+| [hardware.py](hardware.py) | Physical serial bus and MockBus implementations |
+| [motion.py](motion.py) | Bounded motion jobs and stop handling |
+| [servo_setup.py](servo_setup.py) | ID discovery/write/verification and journaling |
+| [calibration_math.py](calibration_math.py) | Joint/reference-pose and calibration mathematics |
+| [imu_settings.py](imu_settings.py) | Shared robotd.toml IMU selection validation and persistence |
+| [imu](imu) | Chip drivers, transport, and shared IMU processing |
+| [static](static) | Workbench UI, 3D meshes, and vendored browser libraries |
+| [dependencies.lock.json](dependencies.lock.json) | Vendored dependency versions/hashes |
 
-1. **准备**：选择关节，松力矩并手动摆成3D参考站姿。点击“清圈并清除旧范围”，一次完成当前关节清圈及旧范围重置，不改其他关节、HOME、方向、硬件中位或IMU。随后“设中位并记录HOME”会永久设置当前舵机中位，同时沿用原有后台记录该位置为软件HOME的逻辑；成功后进入范围面板。无需再点一次相同位置的HOME记录。
-2. **范围**：手动转到两端，记录计数下限、上限。“保存范围，核对方向”依次同步草稿、确认并保存当前关节，然后进入方向面板。其他关节及IMU草稿不会一起保存。0～4095仅是编码器范围。
-3. **方向**：看3D正向示范，再让实物前进一步；方向相同保持设置，不同才反转并复核。底部“保存并下一关节”在保存成功后切换下一只，最后一只完成后进入整机检查。失败不会自动切换或重发。嘴部没有3D活动关节，直接观察开合方向。
+## Call and data flow
 
-准备面板的“手动HOME / 单独清理”保留仅记HOME、仅清圈、仅清当前关节旧范围。方向面板的步长、速度和方向数值收在详情中。已有机器人只微调HOME时无需重新设置永久硬件中位。
+1. The workbench sends JSON commands to server.py; backend operations use hardware/motion/servo_setup and shared application state.
+2. The IMU package consumes the same hardware settings as robotd and applies model-specific mounting/bias calibration.
+3. Authenticated setup navigation stops normal services before calibration; exit validates drafts/motion/torque, closes hardware, and allows normal services to reopen saved settings.
 
-### 整机检查
+## Subdirectories
 
-全部关节完成后，切到“整机检查”：记录整机参考站姿，再驱动回参考站姿；记录只读取和保存当前位置，回位会上力并运动，两者按钮明确区分。查看躯干总倾角及前后、左右偏斜，并直接观察实物是否垂直。
+| Directory | Description |
+| --- | --- |
+| [imu](imu/README.md) | Calibration IMU readers |
+| [static](static/README.md) | Calibration browser frontend |
 
-需要修正时，展开“躯干不直？微调关节”，选择关节、小步微调、记录新HOME并点底部保存，回位复核。最终重新记录整机站姿。IMU安装方向未标定或反馈过期时不显示垂直结论。3D实时跟随仍按当前零点、方向和新鲜反馈显示；未记录整机站姿时，绝对姿态仅供对照。
+## Boundaries and change notes
 
-### IMU 与其他操作
+- Hardware-center writes are permanent servo operations; HOME capture and saving software drafts are different operations. Confirm the selected physical joint before writes.
+- Use --mock for hardware-free previews. The port 8766 API does not provide independent account authentication; service inactivity or successful navigation does not prove physical torque release.
 
-IMU页独立采集和保存。底部“更多”提供撤销、全部草稿保存、导出和全部关节反馈。顶部始终保留停止运动与全部松力矩。
+## Further reading
 
-所有页面区域共用一条状态读取流程。网络错误与单个舵机无反馈分别显示；通信超时不会自动重发写入命令。错误提示可复制和手动关闭。
-
-## 无实物预览
-
-在本目录执行：
-
-```sh
-mkdir -p ../build
-python3 server.py --mock --bind 127.0.0.1 --http-port 8766 --baseline ../config/examples/zero_pos.json --profile ../build/mock-profile.json --dry-run-apply
-```
-
-此命令使用模拟总线，访问 `http://127.0.0.1:8766`。`--dry-run-apply` 只显示服务切换命令。
-
-`imu/` 包含 GPL-3.0-or-later 的 IMU 读取模块；显示素材与浏览器依赖的授权见[第三方声明](../THIRD_PARTY_NOTICES.md)。
-
-速度恢复记录位于 `/etc/robot/calibration_speed_restore.json`，用于标定退出后恢复原速度参数。
-
-## 切换页面
-
-可从连接设置页或机器人控制页进入标定台。导航由 [连接设置服务](../deploy/setup/README.md) 协调，三个页面沿用同一无线主机地址；设置页端口通过 `/etc/easyduck/setup.env` 配置。
-
-标定页顶部可返回机器人控制或连接设置。切换前须保存或撤销草稿、停止实物运动、全部松力矩；未完成时会保留当前页面并提示。退出时冻结新的标定操作，关闭串口并恢复临时速度后才恢复正式服务。切换不会自动保存标定、上力或运行策略。
-
-## 新机器人：分配舵机 ID
-
-从连接设置页点击“新机器人：分配舵机 ID”，或在标定台选择“舵机 ID 分配”页签。新机入口先停止正式控制和手柄服务，不要求15个既定ID在线，也不会自动上力。返回连接设置页时，标定服务继续独占串口，正式控制保持停止。
-
-1. 已编号且 ID 不重复的舵机可保留连接，每次只新增一只出厂 ID 为 1 的舵机，点击“扫描 ID 0～253”。可中途停止并保留已发现的地址。当前总线速率为1Mbps；其他速率不在此页面的设置范围内。
-2. 选择扫描结果，再按安装位置选择目标关节。右腿10～14、左腿20～24、颈头嘴30～34。页面显示原始位置和力矩状态。
-3. 点击“所选舵机上力保持当前位置”，轻轻试扭确认实物，勿强行拧动。所选舵机持续回读；断线显示状态未知，重插后自动更新。上力期间也可重新扫描或选择其他 ID，均为只读操作。断线不会自动重发上力或改号。确认后点“所选舵机松力矩”。确认只有一只舵机使用所选 ID，勾选确认后，点击“写入目标 ID 并核对”。新ID必须未被占用；254和255为保留地址。
-4. 成功后会确认新地址响应、旧地址不再响应、舵机断力及存储锁恢复。已编号舵机可保持连接，再新增下一只 ID 为 1 的舵机，重新扫描后继续。不要同时接入两只相同 ID 的舵机，扫描无法可靠区分它们。
-5. 分配完成后接齐舵机，停止扫描，切回姿态标定，重新核对HOME、方向、限位和IMU。不要直接使用其他机器人的标定运行策略。
-
-两只相同ID的舵机无法通过扫描可靠区分，必须逐只接线。校验错误或舵机报警会停止扫描，不把它们当成“未发现”。改号不写P/D、限流、位置目标或中位，进入页面和扫描也不写参数。只有明确点击上力按钮才沿用标定台的当前位置保持逻辑；松力矩时恢复临时速度，再允许改号。改号前后记录默认保存到 `/var/lib/easyduck/servo-id-changes.jsonl`；可用 `--id-journal` 指定路径。若写入或回读中断，页面不会报告成功，须重新扫描核对实际ID。需要改回旧ID时按同样流程单独改号。
-
-交互流程参考 [XGO Duck 官方首次舵机设置](https://github.com/LuwuDynamics/xgoduck_runtime_arduino#first-time-servo-setup)，使用本项目的泰山派串口后台实现。
-
-仅在PC模拟单只出厂ID为1的舵机：
-
-```sh
-python3 calibration/server.py --mock --mock-servo-id 1 --bind 127.0.0.1 --http-port 18766 --baseline config/examples/zero_pos.json --profile /tmp/easyduck-id-preview.json --dry-run-apply
-```
-
-模拟操作不访问真实串口。`--mock-servo-id` 必须与 `--mock` 一起使用。
-
-## 新机器人首次调整
-
-镜像或已有配置可能属于另一台机器人。按准备、范围、方向逐只处理；清圈与当前关节旧范围重置合并执行，设中位与HOME记录合并显示。清旧范围会备份并保存当前关节的范围重置，保留其他关节和现有草稿，不驱动舵机。
-
-手动记录范围后，“确认并保存当前关节范围”会完成确认和保存，不需要再另找保存按钮。随后对照模型核对方向，最后再保存当前关节。
-
-HD1910 单圈位置模式下，手动摆动可能留下负数或多圈反馈。上力流程会在断力状态、单圈硬件范围已核对后清除临时圈数，并回读位置及断力状态，再执行原有上力流程；不修改零点、方向或 EEPROM。未清圈的越界目标会明确报错，不再只写入不可执行的目标。
-
-## 过零与首次设置硬件中位
-
-实际位置是有符号的连续计数；单圈计数是实际位置对4096取余，用于现有标定文件，两者在零点附近含义不同，例如实际-1对应单圈4095。清除临时圈数不改变编码器零点，不能把过零问题当成清圈失败。
-
-首次安装若关节工作位置靠近编码器零点，先断力、把所选关节手动摆到正确安装中位，再点击“当前位置设为硬件中位（不动作）”。这会**永久修改所选舵机的硬件中位**：发送MID指令0x0B五次、间隔至少10ms，末次后等待100ms再回读；与只清临时圈数的RESET 0x0A不同。流程参考[XGO Duck官方标定](https://github.com/LuwuDynamics/xgoduck_runtime_arduino#calibration)，本页保持断力，不自动执行官方的上力保持步骤。
-
-执行前记录原始位置、中位寄存器原始字节、范围、增益以及软件配置到calibration-backups。回读确认中位约2048、仍断力且范围/增益/模式未变后才报成功。不自动设置其他舵机。该关节HOME及范围需重新记录与核对，方向确认并保存后，再做整机参考站姿。软件备份不能自动撤销舵机永久中位；需要重新摆正并校准。
-
-### 保存范围
-
-- **保存当前关节**：只保存当前选中关节的 HOME、方向、活动范围和范围确认状态，其他关节与 IMU 的草稿保留，不会一起保存。
-- **全部保存**：保存所有关节和 IMU 草稿。IMU 页使用此按钮。
-- 两种保存都只写配置文件并保留旧文件备份，不改变舵机力矩，不驱动回位。运动期间需要先停止再保存。返回正式控制仍需全部断力，并保存或撤销剩余草稿。
+- [Detailed guide](../docs/en/calibration.md)
+- [Documentation index](../docs/en/README.md)
+- [Repository maintenance rules](../AGENTS.md)

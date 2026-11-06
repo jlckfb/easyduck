@@ -1,26 +1,42 @@
-# 网页控制
+# Browser controller and gateway
 
-Python 3.9+ 标准库服务，默认端口 9527。服务通过 `/run/robotd.sock` 连接主控，不直接占用舵机串口。
+**English** | [简体中文](README.zh-CN.md)
 
-板端由 `xgoduck-web.service` 启动，浏览器访问 `http://开发板IP:9527`。先点击“用网页控制”接管，再由用户开启行走。
+## Responsibilities
 
-- 左摇杆：前后行走、左右转向，松手停止；W/S 前后，A/D 转向，不提供横移。速度默认50%。
-- 右摇杆：上下抬头低头、左右看；旁边两条滑杆控制颈部俯仰和歪头，独立按钮让头部回中。
-- 坐下/起立、捡物按实际模型显示；网页不再提供翻滚和跳跃，接口也拒绝这两个动作。
-- 按住鸣叫：复用手柄 wheee 声音，约0.35秒升至最大音量与张嘴幅度，松手立即停声并发送合嘴指令，连续点按每次从零开始。音频增益按强度平方变化，避免小幅张嘴时声音过响。失焦、隐藏或指令过期会停止鸣叫；旧版手柄未传音量时保留原来的音量。
+Serves the operator controller and translates browser requests into robotd IPC. Python owns HTTP, control-session/heartbeat handling, status collection, and request validation; JavaScript owns page interaction. The browser does not generate joint trajectories or run ONNX.
 
-默认站姿位于中间操作区底部；下方整行“详细状态”折叠显示关节数据和日志；断力始终可用。部署和离线测试不会替用户操作实物。
+## File structure
 
-```sh
-python3 server.py --help
-python3 -m unittest discover -s tests -v
-node tests/controls.test.cjs
-```
+| File / directory | Responsibility |
+| --- | --- |
+| [server.py](server.py) | RPC client, Gateway, snapshots, WebSocket heartbeat, HTTP endpoints |
+| [assets/index.html](assets/index.html) | Controller layout and navigation elements |
+| [assets/app.js](assets/app.js) | Joysticks, buttons, keyboard, input cleanup, and ownership UI |
+| [assets/style.css](assets/style.css) | Controller appearance and responsive layout |
+| [tests/test_gateway.py](tests/test_gateway.py) | Mocked daemon/gateway regression checks |
+| [tests/controls.test.cjs](tests/controls.test.cjs) | Browser interaction checks with mocked networking |
+| [requirements.lock](requirements.lock) | Component Python dependency declaration |
 
-测试使用模拟 RPC。安装与启动步骤见[软件使用说明](../docs/软件使用说明.md)。
+## Call and data flow
 
-## 页面切换
+1. The browser sends accepted interaction requests to server.py; Gateway manages the current page connection and forwards control through `/run/robotd.sock`.
+2. robotd status and subscription data are assembled into snapshots for the UI. Shared navigation/address helpers come from deploy.
+3. Page handoff goes through the setup service; calibration, rather than the web gateway, is the alternate hardware owner.
 
-页面顶部可切换到连接设置或实物标定台。入口使用当前主机的设置服务（默认端口 80，读取 `/etc/easyduck/setup.env` 中的 `EASYDUCK_SETUP_PORT`），普通页面切换先检查当前连接，正常时保留当前地址；USB 拔出后使用本页此前读取到的 Wi-Fi 地址继续切换。没有无线地址时显示连接提示。相同主机上的登录会话可以继续使用；跨 IP 访问或设置服务重启后仍需重新登录。设置服务的安装见 [连接设置说明](../deploy/setup/README.md)。
+## Subdirectories
 
-离开控制页会释放网页控制连接。进入标定需确认机器人已放稳，随后停止正式控制并断力；标定退出会检查草稿、运动及力矩状态，释放串口后恢复正式服务，不会自动上力或运行策略。
+| Directory | Description |
+| --- | --- |
+| [assets](assets/README.md) | Controller browser assets |
+
+## Boundaries and change notes
+
+- Control ownership is not account authentication. This service listens on port 9527 by default; its APIs require a trusted network.
+- The web controller exposes walking/head/posture/pickup controls with current model/state limits; roulade/jumping are rejected. UI labels are currently Chinese, including when reading English documentation.
+
+## Further reading
+
+- [Detailed guide](../docs/en/web-control.md)
+- [Documentation index](../docs/en/README.md)
+- [Repository maintenance rules](../AGENTS.md)
