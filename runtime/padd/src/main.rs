@@ -306,7 +306,7 @@ fn main() -> std::process::ExitCode {
             // "The pad went away" is the single most useful line in the journal when the robot
             // stops responding mid-drive, and one line per tick would bury it.
             if args.managed_control {
-                if let Err(e)=control_heartbeat(&mut stream,false,true) {
+                if let Err(e)=control_heartbeat(&mut stream,&mut next_id,false,true) {
                     tracing::error!(error=%e,"control heartbeat failed");return std::process::ExitCode::FAILURE;
                 }
             }
@@ -333,6 +333,7 @@ fn main() -> std::process::ExitCode {
             tap.watch(&pad);
         }
 
+        let mut control_allowed = true;
         if args.managed_control {
             let neutral=[Axis::LeftStickX,Axis::LeftStickY,Axis::RightStickX,Axis::RightStickY]
                 .iter().all(|a|(pad.value(*a) as f64).abs()<args.deadzone)
@@ -341,9 +342,12 @@ fn main() -> std::process::ExitCode {
                     Button::DPadUp,Button::DPadDown,Button::DPadLeft,Button::DPadRight]
                     .iter().all(|b|!pad.is_pressed(*b))
                 && [Button::LeftTrigger2,Button::RightTrigger2].iter().all(|b|pad.button_data(*b).map(|d|d.value()<0.1).unwrap_or(true));
-            if let Err(e)=control_heartbeat(&mut stream,true,neutral) {
-                tracing::error!(error=%e,"control heartbeat failed");return std::process::ExitCode::FAILURE;
-            }
+            control_allowed = match control_heartbeat(&mut stream,&mut next_id,true,neutral) {
+                Ok(allowed) => allowed,
+                Err(e) => {
+                    tracing::error!(error=%e,"control heartbeat failed");return std::process::ExitCode::FAILURE;
+                }
+            };
         }
         if emergency_relax {
             walking_speed.reset();
@@ -351,6 +355,20 @@ fn main() -> std::process::ExitCode {
                 tracing::error!(error=%e,"torque-off request failed");return std::process::ExitCode::FAILURE;
             }
             std::thread::sleep(period);continue;
+        }
+        // A non-owner only reports presence. Discard edges now so a later handoff
+        // cannot replay an action pressed while the web was controlling the robot.
+        if !control_allowed {
+            walking_speed.reset();
+            mode = Mode::Drive;
+            select_held_since = None;
+            shutdown_sent = false;
+            dpad_up_held_since = None;
+            mode_switch_sent = false;
+            prev_rt = 0.0;
+            prev_lt = 0.0;
+            std::thread::sleep(period);
+            continue;
         }
         if toggle_head {
             mode = if mode == Mode::Head {
@@ -639,10 +657,21 @@ fn main() -> std::process::ExitCode {
     }
 }
 
-fn control_heartbeat(stream:&mut UnixStream,connected:bool,neutral:bool)->std::io::Result<()> {
-    let mut line=serde_json::to_vec(&serde_json::json!({"jsonrpc":"2.0","method":"robot.control.heartbeat",
+fn control_heartbeat(stream:&mut UnixStream,next_id:&mut u64,connected:bool,neutral:bool)->std::io::Result<bool> {
+    let id = *next_id;
+    *next_id += 1;
+    let mut line=serde_json::to_vec(&serde_json::json!({"jsonrpc":"2.0","id":id,"method":"robot.control.heartbeat",
         "params":{"source":"pad","connected":connected,"neutral":neutral}}))?;
-    line.push(b'\n');stream.write_all(&line)?;stream.flush()
+    line.push(b'\n');stream.write_all(&line)?;stream.flush()?;
+    let mut answer = String::new();
+    BufReader::new(stream.try_clone()?).read_line(&mut answer)?;
+    let response: serde_json::Value = serde_json::from_str(&answer)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData,e))?;
+    if response.get("id").and_then(|v|v.as_u64()) != Some(id) || response.get("error").is_some() {
+        return Err(std::io::Error::new(std::io::ErrorKind::InvalidData,"control heartbeat rejected or mismatched"));
+    }
+    let result = &response["result"];
+    Ok(result["owner"].as_str() == Some("pad") && result["ready"].as_bool() == Some(true))
 }
 
 /// Send a continuous intent: no `id`, no reply, nothing to wait for.
