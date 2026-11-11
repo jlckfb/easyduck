@@ -1,12 +1,22 @@
 const $=id=>document.getElementById(id);
+const {t,error:translateError}=controlLocale;
 // Theme state is shared with connection setup; it never sends control requests.
 function setTheme(theme){
  const selected=theme==='day'?'day':'night';
  document.documentElement.dataset.theme=selected;
- $('theme-button').textContent=selected==='day'?'☾ 暗色':'☼ 亮色';
- $('theme-button').setAttribute('aria-pressed',String(selected==='day'));
+ renderTheme();
  try{localStorage.setItem('easyduck-theme',selected);}catch(_){}
 }
+function renderTheme(){
+ const day=document.documentElement.dataset.theme==='day';
+ $('theme-button').textContent=day?t('☾ 暗色'):t('☼ 亮色');
+ $('theme-button').setAttribute('aria-pressed',String(day));
+}
+controlLocale.init($('control-language'),()=>{
+ renderTheme();
+ renderCall();
+ renderNotice();
+});
 try{setTheme(localStorage.getItem('easyduck-theme')||'night');}catch(_){setTheme('night');}
 $('theme-button').onclick=()=>setTheme(document.documentElement.dataset.theme==='day'?'night':'day');
 let statusBusy=false, commandBusy=false, commandPending=false;
@@ -17,16 +27,23 @@ $('use-web').onclick=async()=>{try{resetInput();await post('command',{twist:[0,0
 $('use-pad').onclick=async()=>{try{resetInput();await post('control',{preference:'auto'});}catch(e){showError(e);}};
 function releasePage(){return fetch('/api/release',{method:'POST',keepalive:true,headers:{'Content-Type':'application/json','X-Control-Id':controlId},body:'{}'}).catch(()=>{});}
 async function post(path, body){const r=await fetch('/api/'+path,{method:'POST',headers:{'Content-Type':'application/json','X-Control-Id':controlId},body:JSON.stringify(body)});const x=await r.json();if(!r.ok)throw new Error(x.detail||'请求未完成，请重试');return x;}
-let noticeUntil=0,skillBusy=false;
-function notice(text,error=false){noticeUntil=Date.now()+4000;$('message').textContent=text;$('message').classList.toggle('error',error);}
+let noticeUntil=0,skillBusy=false,currentNotice=null;
+function renderNotice(){
+ if(Date.now()>noticeUntil||!currentNotice)return;
+ const {message,error,values}=currentNotice;
+ $('message').textContent=error?translateError(message):t(message,values?.action?{action:t(values.action)}:values);
+ $('message').classList.toggle('error',error);
+ $('message').title=error?message:'';
+}
+function notice(message,error=false,values){noticeUntil=Date.now()+4000;currentNotice={message,error,values};renderNotice();}
 function showError(e){notice(e.message,true);}
 async function setMode(mode){if(mode!=='off'&&!webAllowed)return;try{await post('mode',{mode});notice(mode==='off'?'已发送断力请求':mode==='hold'?'已发送默认站姿请求':'已发送开启行走请求');}catch(e){showError(e);}}
 document.querySelectorAll('[data-mode]').forEach(b=>b.onclick=()=>setMode(b.dataset.mode));
 document.querySelectorAll('[data-skill]').forEach(button=>button.onclick=async()=>{
  if(!webAllowed||skillBusy||button.disabled)return;
  skillBusy=true;
- const label=button.querySelector('b').textContent;button.disabled=true;
- try{zero();await post('skill',{skill:button.dataset.skill});notice('已发送'+label+'请求');}catch(e){showError(e);}finally{skillBusy=false;}
+ const label=button.dataset.skill==='sit_toggle'?'坐下 / 起立':'捡物';button.disabled=true;
+ try{zero();await post('skill',{skill:button.dataset.skill});notice('已发送{action}请求',false,{action:label});}catch(e){showError(e);}finally{skillBusy=false;}
 });
 $('head-zero').onclick=()=>{resetSticks[1]();for(const i of [0,3])$('head'+i).value=0;sendCommand();};
 for(const input of document.querySelectorAll('#head-controls input'))input.oninput=()=>sendCommand();
@@ -78,7 +95,7 @@ let callPointer=null,callHeld=false,callLevel=0,callTick=performance.now();
 function renderCall(){
  $('call').setAttribute('aria-pressed',String(callHeld));
  $('call').style.setProperty('--call-level',`${Math.round(callLevel*100)}%`);
- $('call-level').textContent=callLevel>0?`${callHeld?'鸣叫':'回落中'} ${Math.round(callLevel*100)}%`:'按得越久，叫声越响';
+ $('call-level').textContent=callLevel>0?`${callHeld?t('鸣叫'):t('回落中')} ${Math.round(callLevel*100)}%`:t('按得越久，叫声越响');
 }
 function releaseCall(){
  const id=callPointer;callPointer=null;callHeld=false;callLevel=0;
@@ -122,51 +139,59 @@ const fresh=s.feedback_age_ms!=null&&s.feedback_age_ms<1500&&!s.last_error;
 const control=s.control||{};
 if(controlGeneration!==control.generation){resetInput();controlGeneration=control.generation;}
 webAllowed=fresh&&control.owner==='web'&&control.ready&&s.this_page;
-$('control-owner').textContent=control.owner==='pad'?'手柄':control.owner==='web'?'网页':'等待连接';
-$('pad-connection').textContent=control.pad_connected?'已连接':'未连接';
-$('control-rule').textContent=(control.preference==='web'?'已指定网页':'手柄优先')+(control.ready?'':' · 等待控制归零');
+$('control-owner').textContent=control.owner==='pad'?t('手柄'):control.owner==='web'?t('网页'):t('等待连接');
+$('pad-connection').textContent=control.pad_connected?t('已连接'):t('未连接');
+$('control-rule').textContent=(control.preference==='web'?t('已指定网页'):t('手柄优先'))+(control.ready?'':t(' · 等待控制归零'));
 for(const b of document.querySelectorAll('[data-mode]'))if(b.dataset.mode!=='shadow')b.disabled=!webAllowed;
 for(const input of document.querySelectorAll('#head-controls input'))input.disabled=!webAllowed;
 const fmt=(n,d=1)=>typeof n==='number'?n.toFixed(d):'—';
-const modeLabel={off:'最近请求：断力',hold:'最近请求：默认站姿',policy:'最近请求：行走',robotd:'正在查看主控状态'};
+const modeLabel={off:t('最近请求：断力'),hold:t('最近请求：默认站姿'),policy:t('最近请求：行走'),robotd:t('正在查看主控状态')};
 $('rx').textContent=fmt(s.feedback_hz)+' Hz';$('rl').textContent=fmt(s.loop_hz)+' Hz';
-$('imu').textContent=s.imu_ok==null?'未知':s.imu_ok?'就绪':'未就绪';
+$('imu').textContent=s.imu_ok==null?t('未知'):s.imu_ok?t('就绪'):t('未就绪');
 $('mode').textContent=modeLabel[s.mode]||s.mode;
-$('online-dot').classList.toggle('online',fresh);$('connection-label').textContent=fresh?'机器人在线':'状态未就绪';
+$('online-dot').classList.toggle('online',fresh);$('connection-label').textContent=fresh?t('机器人在线'):t('状态未就绪');
 const phase=s.state?.policy;
 // A running posture/pick/recovery is still an enabled policy. Older daemons
 // lack the gate field; only infer enabled from phases that actually run a model.
 const policyEnabled=typeof s.enabled==='boolean'?s.enabled:['xgo_walk','xgo_sit','xgo_rise','xgo_pick','xgo_getup','xgo_default_pose'].includes(phase);
-const driveButton=document.querySelector('[data-mode=policy]');driveButton.querySelector('b').textContent=policyEnabled?'行走已开启':'开启行走';driveButton.disabled=!webAllowed||policyEnabled;
-const phases={xgo_off:'策略已关闭',xgo_hold:'保持姿态',held:'保持姿态',stand:'站姿',xgo_walk:'行走模式',xgo_getup:'倒地恢复中',xgo_default_pose:'准备起身',xgo_sit:'坐姿',xgo_rise:'起立／站姿保持',xgo_pick:'捡物中',xgo_roulade:'滚翻中',xgo_jump:'跳跃中',limp:'已断力'};
-$('robot-phase').textContent=phases[phase]||(phase?'其他状态':'等待读取状态');
+const driveButton=document.querySelector('[data-mode=policy]');driveButton.querySelector('b').textContent=policyEnabled?t('行走已开启'):t('开启行走');driveButton.disabled=!webAllowed||policyEnabled;
+const phases={xgo_off:t('策略已关闭'),xgo_hold:t('保持姿态'),held:t('保持姿态'),stand:t('站姿'),xgo_walk:t('行走模式'),xgo_getup:t('倒地恢复中'),xgo_default_pose:t('准备起身'),xgo_sit:t('坐姿'),xgo_rise:t('起立／站姿保持'),xgo_pick:t('捡物中'),xgo_roulade:t('滚翻中'),xgo_jump:t('跳跃中'),limp:t('已断力')};
+$('robot-phase').textContent=phases[phase]||(phase?t('其他状态'):t('等待读取状态'));
 const voltage=s.health?.battery?.volts;
 const percent=s.health?.battery?.percent;
 $('battery').textContent=typeof percent==='number'?Math.round(percent)+'%':typeof voltage==='number'?voltage.toFixed(2)+' V':'—';$('battery').title=typeof voltage==='number'?voltage.toFixed(2)+' V':'';
-$('control-guide').textContent=webAllowed?'网页已接管，可以操作':control.owner==='pad'?'手柄正在控制':'点击「用网页控制」开始';
+$('control-guide').textContent=webAllowed?t('网页已接管，可以操作'):control.owner==='pad'?t('手柄正在控制'):t('点击「用网页控制」开始');
 $('use-web').disabled=webAllowed;$('use-pad').disabled=control.preference==='auto';
 for(const zone of document.querySelectorAll('.joy'))zone.setAttribute('aria-disabled',String(!webAllowed));
 $('call').disabled=!webAllowed;$('speed').disabled=!webAllowed;$('head-zero').disabled=!webAllowed;
-if(Date.now()>noticeUntil){$('message').textContent=s.last_error||(webAllowed?'摇杆松手停止移动；动作按钮按一次执行一次。':'网页未接管，摇杆与动作按钮暂不可用。');$('message').classList.toggle('error',!!s.last_error);}
+if(Date.now()>noticeUntil){$('message').textContent=(s.last_error?translateError(s.last_error):'')||(webAllowed?t('摇杆松手停止移动；动作按钮按一次执行一次。'):t('网页未接管，摇杆与动作按钮暂不可用。'));$('message').title=s.last_error||'';$('message').classList.toggle('error',!!s.last_error);}
 for(const button of document.querySelectorAll('[data-skill]')){button.hidden=!s.models?.[button.dataset.model];button.disabled=skillBusy||!webAllowed||!policyEnabled||phase!=='xgo_walk'&&!(button.dataset.skill==='sit_toggle'&&['xgo_sit','xgo_rise'].includes(phase))&&!(button.dataset.skill==='ground_pick'&&phase==='xgo_rise');}
 
 
 const state=s.state||{},recovery=s.recovery||{};
 $('recovery-phase').textContent=state.policy||'—';$('active-model').textContent=s.active_model||'—';
 $('tilt-angle').textContent=recovery.angle_deg==null?'—':fmt(recovery.angle_deg)+'°';
-$('recovery-timer').textContent=state.policy==='xgo_default_pose'?'原版默认姿态保持 1 秒':state.policy==='xgo_getup'?'原版倒地恢复':state.policy==='xgo_pick'?'原版 4 秒捡物周期':'—';
+$('recovery-timer').textContent=state.policy==='xgo_default_pose'?t('原版默认姿态保持 1 秒'):state.policy==='xgo_getup'?t('原版倒地恢复'):state.policy==='xgo_pick'?t('原版 4 秒捡物周期'):'—';
 for(const [id,values]of [['gyro-values',s.gyro],['gravity-values',s.gravity]])$(id).textContent=values?values.map(x=>x.toFixed(3)).join(' / '):'—';
-$('command-health').textContent=`请求 ${(state.move?.requested||[]).map(x=>fmt(x,3)).join(' / ')} · 应用 ${(state.move?.applied||[]).map(x=>fmt(x,3)).join(' / ')} · 限制 ${(state.move?.limited_by||[]).join(', ')||'无'}`;
+$('command-health').textContent=t('请求 {requested} · 应用 {applied} · 限制 {limits}',{
+ requested:(state.move?.requested||[]).map(x=>fmt(x,3)).join(' / '),
+ applied:(state.move?.applied||[]).map(x=>fmt(x,3)).join(' / '),
+ limits:(state.move?.limited_by||[]).join(', ')||t('无')
+});
 if(s.angles)$('joints').innerHTML=s.motors.map((id,i)=>`<tr><td>${id}</td><td>${fmt(s.angles[i])}</td><td>${fmt(s.targets[i])}</td></tr>`).join('');
-$('runtime-log').textContent=s.recent_log||'暂无日志';
-const cal=s.calibration||{},calTime=t=>t==null?'—':new Date(t*1000).toLocaleString('zh-CN',{hour12:false});
-const calLabel={applied:'已生效（推断）',pending_restart:'已保存，待重启robotd生效',unsupported:'当前robotd不读网页标定',unknown:'未知'}[cal.state]||'未知';
-$('calibration-status').textContent=`标定状态：${calLabel} · 文件 ${cal.file_sha256||'—'} · 保存于 ${cal.saved_at||'—'}（修改 ${calTime(cal.file_mtime)}） · robotd ${(cal.robotd_sha256||'—').slice(0,8)} 启动于 ${calTime(cal.robotd_started)}${cal.error?' · '+cal.error:''}。robotd不记录已加载哪份标定，“已生效”按文件修改时间早于robotd启动时间推断。`;
+$('runtime-log').textContent=s.recent_log||t('暂无日志');
+const cal=s.calibration||{},calTime=t=>t==null?'—':new Date(t*1000).toLocaleString(controlLocale.language,{hour12:false});
+const calLabel={applied:t('已生效（推断）'),pending_restart:t('已保存，待重启robotd生效'),unsupported:t('当前robotd不读网页标定'),unknown:t('未知')}[cal.state]||t('未知');
+$('calibration-status').textContent=t('标定状态：{status} · 文件 {file} · 保存于 {saved}（修改 {modified}） · robotd {daemon} 启动于 {started}{error}。robotd不记录已加载哪份标定，“已生效”按文件修改时间早于robotd启动时间推断。',{
+ status:calLabel,file:cal.file_sha256||'—',saved:cal.saved_at||'—',modified:calTime(cal.file_mtime),
+ daemon:(cal.robotd_sha256||'—').slice(0,8),started:calTime(cal.robotd_started),
+ error:cal.error?' · '+translateError(cal.error):''
+});
 $('calibration-status').className=cal.state==='applied'?'hint':'warn';
-}catch(e){webAllowed=false;resetInput();$('online-dot').classList.remove('online');$('connection-label').textContent='连接中断';$('control-guide').textContent='等待机器人重新连接';for(const b of document.querySelectorAll('[data-mode],[data-skill],#call'))b.disabled=true;showError(e);}finally{statusBusy=false;}},250);
+}catch(e){webAllowed=false;resetInput();$('online-dot').classList.remove('online');$('connection-label').textContent=t('连接中断');$('control-guide').textContent=t('等待机器人重新连接');for(const b of document.querySelectorAll('[data-mode],[data-skill],#call'))b.disabled=true;showError(e);}finally{statusBusy=false;}},250);
 
 function navigationURL(target){
- const url=new URL('/navigate',location.href);url.port=document.querySelector('meta[name="setup-port"]').content;url.searchParams.set('target',target);url.searchParams.set('source','control');return url.href;
+ const url=new URL('/navigate',location.href);url.port=document.querySelector('meta[name="setup-port"]').content;url.searchParams.set('target',target);url.searchParams.set('source','control');url.searchParams.set('lang',controlLocale.language);return url.href;
 }
 for(const [id,target] of [['nav-settings','setup'],['nav-calibration','calibration']]){
  const link=$(id);link.href=navigationURL(target);

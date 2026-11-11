@@ -13,3 +13,12 @@ html[data-theme=day]{--bg:#ece7dc;--panel:rgba(255,253,247,.88);--panel-solid:#f
 @media(prefers-reduced-motion:reduce){*,*:before{animation:none!important;transition:none!important}}
 
 .toast{pointer-events:auto;user-select:text}.toast.err{position:relative;padding-right:42px}.toast-close{position:absolute;right:8px;top:8px;border:0;background:transparent;color:inherit;padding:3px 7px;font-size:20px;line-height:1;cursor:pointer}
+
+
+@media(max-width:620px){.top{flex-wrap:wrap}.top .brand{flex:1 0 50%}.top .grow{display:none}.top .state{display:none}}
+
+.language-picker{display:inline-flex;align-items:center;flex-shrink:0;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--panel)}
+.language-picker button{font:inherit;font-size:12px;padding:8px 10px;border:0;background:transparent;color:var(--ink-2);cursor:pointer;white-space:nowrap}
+.language-picker button+button{border-left:1px solid var(--line)}
+.language-picker button[aria-pressed=true]{background:var(--pulse-dim);color:var(--pulse)}
+.language-picker button:focus-visible{outline:2px solid var(--pulse);outline-offset:-3px}

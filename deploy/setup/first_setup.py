@@ -153,7 +153,11 @@ def make_handler(app):
                     ('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; form-action 'self'")]+list(headers):
                 self.send_header(name,value)
             self.end_headers(); self.wfile.write(data)
-        def redirect(self, path): self.send(302,b'',headers=[('Location',path)])
+        def redirect(self, path):
+            language=parse_qs(urlsplit(self.path).query).get('lang',[''])[0]
+            if language in ('en','zh-CN'):
+                path+=('&' if '?' in path else '?')+'lang='+language
+            self.send(302,b'',headers=[('Location',path)])
         def do_GET(self):
             path = urlsplit(self.path).path
             session = app.session(self.headers.get('Cookie',''))
@@ -176,7 +180,7 @@ def make_handler(app):
                 text=(STATIC/('index.html' if path=='/' else 'login.html')).read_text(encoding='utf-8')
                 text=text.replace('__CSRF__',html.escape(session['csrf'] if session else '',quote=True)).replace('__USER__',html.escape(app.auth.username,quote=True))
                 return self.send(200,text,'text/html; charset=utf-8')
-            if path in ('/static/setup.css','/static/setup.js','/static/navigation.js'):
+            if path in ('/static/setup.css','/static/setup.js','/static/navigation.js','/static/i18n.js'):
                 return self.send(200,(STATIC/path.rsplit('/',1)[1]).read_bytes(), 'text/css; charset=utf-8' if path.endswith('.css') else 'text/javascript; charset=utf-8')
             if not session: return self.send(401,{'ok':False,'message':'登录已过期，请重新登录。'})
             if path=='/api/status':

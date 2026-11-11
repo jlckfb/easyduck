@@ -4,11 +4,12 @@ assert(!/id="(?:jump|roulade)"/.test(html));
 const elements=new Map();
 function element(id){return {id,value:['head0','head3'].includes(id)?'0':id==='speed'?'50':'',disabled:false,dataset:{},textContent:'',tagName:'DIV',style:{transform:'',setProperty(){}},classList:{toggle(){},add(){},remove(){}},setAttribute(k,v){this[k]=v;},clientWidth:200,offsetWidth:60,firstElementChild:{offsetWidth:60,style:{}},hasPointerCapture(){return this.capture!=null;},setPointerCapture(p){this.capture=p;},releasePointerCapture(){this.capture=null;},getBoundingClientRect(){return {left:0,top:0,width:200,height:200};},querySelector(){return this.label||(this.label={textContent:'action'});}};}
 for(const m of html.matchAll(/id="([^"]+)"/g))elements.set(m[1],element(m[1]));
-const $=id=>{assert(elements.has(id),'unknown element '+id);return elements.get(id);};
+elements.delete('control-language');
+const $=id=>{if(id==='control-language')return null;assert(elements.has(id),'unknown element '+id);return elements.get(id);};
 const intervals=[],requests=[],events={};let now=0;
 const drive=element('drive'),sitButton=element('sit'),pickButton=element('pick');sitButton.dataset={skill:'sit_toggle',model:'posture'};pickButton.dataset={skill:'ground_pick',model:'ground_pick'};let statusFixture={};
 const ctx={document:{hidden:false,documentElement:{dataset:{}},getElementById:$,querySelector(s){return s.startsWith('meta')?{content:'9527'}:drive;},querySelectorAll(s){return s==='#head-controls input'?[$('head0'),$('head3')]:s==='[data-skill]'?[sitButton,pickButton]:[];},addEventListener(n,f){events[n]=f;}},window:{addEventListener(n,f){events[n]=f;}},performance:{now:()=>now},setInterval(f,ms){intervals.push({f,ms});},setTimeout(){},localStorage:{getItem(){return 'night';},setItem(){}},location:{protocol:'http:',host:'mock',href:'http://mock/'},URL,AbortSignal,console,crypto:{randomUUID:()=> 'test'},WebSocket:class{close(){}},fetch:async(url,args)=>{requests.push({url,body:args?.body&&JSON.parse(args.body)});return {ok:true,json:async()=>statusFixture};}};
-vm.createContext(ctx);vm.runInContext(fs.readFileSync(path.join(__dirname,'../assets/app.js'),'utf8'),ctx);
+vm.createContext(ctx);vm.runInContext(fs.readFileSync(path.join(__dirname,'../assets/i18n.js'),'utf8'),ctx);vm.runInContext(fs.readFileSync(path.join(__dirname,'../assets/app.js'),'utf8'),ctx);
 const run=code=>vm.runInContext(code,ctx);const event=(x,y)=>({clientX:x,clientY:y,pointerId:1,button:0,preventDefault(){}});
 (async()=>{
  run('webAllowed=true');$('joy-left').onpointerdown(event(30,30));assert.equal(run('motion[1]'),0);assert(run('motion[0]')>0&&run('motion[2]')>0);
