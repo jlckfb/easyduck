@@ -1,20 +1,14 @@
 # EasyDuck
 
-**On-board control software for a TaishanPi 1M (RK3566) biped robot.**
+**An open-source biped robot powered by TaishanPi 1M, with on-board motion policies that bring a walking duck to life.**
 
-**English** | [简体中文](README.zh-CN.md)
+**English** | [简体中文](README.zh-CN.md) · [Hardware and build tutorials](https://oshwlab.com/lckfb-team/project_eouzeufa) · [Software docs](docs/en/README.md) · [Policy training](https://github.com/LuwuDynamics/xgoduck_rl)
 
-[Documentation](docs/en/README.md) · [中文文档](docs/zh-CN/README.md)
+EasyDuck combines TaishanPi 1M (RK3566), 15 HD1910 servos, and an IMU for browser/gamepad control, walking, standing, sit/stand, fall recovery, pickup, and head movement.
 
-EasyDuck adapts the Microduck software foundation and XGO Duck policy/control flow to a TaishanPi robot with 15 HD1910 servos and an I²C IMU. It provides the on-board path from hardware setup and calibration to gamepad/browser input, closed-loop policy inference, servo targets, and diagnostics.
+Motion policies run locally on the board. The daemon feeds operator commands, body orientation, joint feedback, and the previous action into an ONNX model, converts its output into servo targets, and adjusts motion using fresh feedback.
 
-The robot's gait is produced by ONNX policy inference on the board, using joint feedback, IMU data, previous actions, and operator commands. The web page is a control client and calibration workbench; it does not calculate a gait in the browser. The 3D view visualizes reference poses and measured joints/body orientation, not a physics simulation.
-
-This repository contains **application source, deployment tools, and five ONNX models**. It does not include a complete board SDK, Linux distribution, flashable firmware release, mechanical design, or model-training workspace. The build commands below produce application binaries, not an operating-system image.
-
-> **License scope:** this is a mixed-source repository. Some upstream models and derived runtime content have no explicit redistribution license in the recorded upstream revision. The root Apache-2.0 license does not cover every file. See [License and provenance](#license-and-provenance).
-
-## Hardware and demonstrations
+## Demonstrations
 
 <table>
   <tr>
@@ -47,53 +41,75 @@ This repository contains **application source, deployment tools, and five ONNX m
   </tr>
 </table>
 
+## Open-source projects and resources
+
+Hardware, software, and tutorials are open source. Use these entry points for each part of the project.
+
+| Resource | Contents |
+| --- | --- |
+| [Hardware](https://oshwlab.com/lckfb-team/project_eouzeufa) | Hardware design files |
+| [Software](https://github.com/jlckfb/easyduck) | This repository: on-board control, browser UI, calibration tools, deployment scripts, and motion policies |
+| [Build tutorials](https://oshwlab.com/lckfb-team/project_eouzeufa) | Hardware and tutorials share one project page, covering the build and operation |
+| [XGO Duck training](https://github.com/LuwuDynamics/xgoduck_rl) | Upstream simulation and reinforcement-learning project with training environments, policy playback, and ONNX export |
+| [Software guide](docs/en/software-guide.md) | EasyDuck installation, calibration, daily operation, and rollback |
+
+Training runs on a GPU-equipped computer; EasyDuck runs the exported ONNX policies on TaishanPi. XGO Duck training is based on [Pollen Robotics/microduck_rl](https://github.com/pollen-robotics/microduck_rl). Model origins, pinned revisions, and interfaces are recorded in the [model guide](docs/en/models.md) and [manifest](models/manifest.json).
 
 ## Features
 
-- **Motion:** walking, zero-speed standing, fall recovery, commanded sit/stand, and pickup. Roulade requests remain available through supported gamepad/CLI paths; the web controller exposes neither roulade nor jumping.
-- **Web remote:** drive/head joysticks, neck-pitch and head-roll sliders, speed adjustment, status inspection, and press-and-hold vocalization with mouth movement.
-- **Gamepads:** PS5 DualSense over Bluetooth and tested USB/2.4 GHz receivers presenting an Xbox 360 controller. Both use the existing drive, head, motion, mouth, and sound controls, with ownership handoff between gamepad and browser. Retained body-mode/kick bindings are not active capabilities of the shipped XGO control path.
-- **Calibration:** servo ID assignment, independent hardware-center and HOME buttons, direction, travel limits, 3D feedback, whole-body reference pose, and JSON import/export.
-- **Two IMUs:** BNO085 and LSM6DSV16X. The daemon and calibration service share hardware settings, with installation rotation and bias stored per model.
-- **Connection setup:** NetworkManager Wi-Fi configuration, BlueZ pairing, and reconnection attempts for registered PS5 controllers.
-- **Low-battery protection:** the board profile uses valid smoothed bus voltage at or below 6.2 V to preempt ordinary control, attempt sitting when possible, release torque, and latch ordinary controls until the daemon restarts. It does not shut down Linux or energize an already relaxed robot.
-- **Deployment:** ARM64 builds, staged installation, hashes, preservation of existing configuration, installation backups, and file rollback.
-
-Motion availability depends on installed models, configuration, feedback, and controller state. A successful build or service start is not physical-motion validation.
-
-### Shipped control profile and model contract
-
-The installed `40-xgoduck-reference.conf` sets `ROBOTD_CONTROL_PROFILE=xgoduck`. This selects a 50 Hz control path in `robotd/src/main.rs` and the action state machine in `xgo.rs`. The source also retains a generic controller; its optional features must not be assumed to work in the XGO path.
-
-| Policy slot | Bundled purpose in the XGO profile |
+| Feature | Description |
 | --- | --- |
-| `walk`, `stand` | The same walking policy, also used for zero-speed standing |
-| `sitstand` | Get-up policy for fall recovery |
-| `posture` | Separate commanded sit/stand policy; also used by low-battery sitting |
-| `ground_pick` | Pickup policy, driven with an encoded action phase |
-| `roulade` | Roulade policy; gamepad/CLI requests, no web button |
-| `kick_left`, `kick_right` | Not bundled; reference configuration sets both to `none`, and the XGO loop does not run kick requests |
+| Motion control | Walking, zero-speed standing, fall recovery, commanded sit/stand, and pickup, subject to the loaded policies and current state |
+| Browser control | Twin sticks, head movement, speed adjustment, vocalization, and status; the remote page supports Chinese/English switching |
+| Gamepad control | PS5 DualSense over Bluetooth and tested Xbox 360 protocol USB/2.4 GHz receivers, with browser/gamepad ownership handoff |
+| Calibration workbench | Servo IDs, hardware center, HOME, direction, travel limits, 3D feedback, and robot-specific calibration import/export |
+| IMU support | BNO085 and LSM6DSV16X, with installation rotation and static bias stored per model |
+| Connectivity and services | Wi-Fi setup, PS5 pairing/reconnection, service startup, and restart after process exit |
+| Low-battery protection | The board profile preempts normal control at a valid smoothed bus voltage ≤6.2 V, sits when possible, then releases torque and locks normal control |
 
-Policies consume 61 values and produce 14 actions. The driver handles all 15 servos, with mouth ID34 controlled separately. Saved encoder HOME/direction/limits are converted to model joint coordinates by the SCS driver; a model's nominal angles are not encoder calibration. See [model interfaces and provenance](docs/en/models.md).
+Motion availability depends on policies, calibration, power, and feedback. Low-battery protection leaves Linux running. The browser has no jump or roulade button; retained kick/body bindings do not imply that the current control flow executes those actions.
 
-## Requirements
+## Getting started
+
+### Hardware
 
 | Component | Supported configuration |
 | --- | --- |
-| Board | TaishanPi 1M, Rockchip RK3566, Linux ARM64 with systemd |
-| Servos | 15 HD1910 servos, default serial device `/dev/ttyS3` |
-| Serial support | UART3 half-duplex direction control matching the device tree; a serial device node alone is insufficient |
-| IMU | **BNO085 or LSM6DSV16X only**, default bus `/dev/i2c-2` |
-| Gamepad | PS5 DualSense through BlueZ, or tested USB/2.4 GHz receivers through Linux `xpad`; see [USB gamepad requirements](docs/en/usb-gamepad.md) |
-| Audio | Working board audio configuration and ALSA `aplay` / `amixer` |
-| Python | Python 3.11+ for all components, including calibration |
-| Native dependencies | libudev and ONNX Runtime 1.23+ providing `libonnxruntime.so` |
-| Connection setup | NetworkManager/`nmcli`, BlueZ/`bluetoothctl`, system `libcrypt` |
-| Browser | JavaScript and WebGL for the 3D workbench; three.js is vendored |
+| Controller | TaishanPi 1M, RK3566, ARM64 Linux with systemd |
+| Servos | 15 HD1910 servos on UART3 by default, with matching half-duplex direction control |
+| IMU | BNO085 or LSM6DSV16X; default I²C bus `/dev/i2c-2` |
+| Input | Browser, PS5 DualSense, or a tested USB/2.4 GHz receiver gamepad |
 
-GPIO polarity and wiring must come from the target device tree. The installer does not install the kernel, board drivers, or ONNX Runtime. See [IMU drivers](docs/en/imu-drivers.md) for supported configuration combinations.
+The system needs Python 3.11+, ONNX Runtime, ALSA, NetworkManager, BlueZ, and matching board drivers. USB receivers require the kernel's `xpad` driver. See [deployment](docs/en/deployment.md) and [USB gamepad support](docs/en/usb-gamepad.md) for dependencies and installation.
 
-Microphone sensing, ToF depth sensing, and odometry are not implemented. Some `robotctl` network, pairing, and update clients depend on external services not included here.
+### First motion
+
+1. Follow the [build tutorials](https://oshwlab.com/lckfb-team/project_eouzeufa) to prepare the hardware, system, and wiring.
+2. Open connection setup at the board's address to configure Wi-Fi or pair a gamepad. See [network access](docs/en/network-access.md) for finding the address.
+3. Support the robot and enter calibration. Set servo IDs, hardware center, HOME, direction, travel limits, and IMU calibration, then export a backup.
+4. Check policies and robot-specific parameters using the [configuration guide](docs/en/configuration.md). Repository templates disable policies by default; enable model loading after calibration.
+5. Open the remote page, choose **Take web control** (「用网页控制」), check **Default stance** (「默认站姿」), then enable walking. For gamepad use, return ownership, release sticks/buttons, and press Start/Options.
+
+| Page | Default address |
+| --- | --- |
+| Connection setup | `http://BOARD_IP/` |
+| Browser remote | `http://BOARD_IP:9527/` |
+| Calibration workbench | `http://BOARD_IP:8766/`, after the page/service handoff |
+
+Replace `BOARD_IP` with the board's current address. Support the robot before using **Release torque** (「断力」). Full button mappings, calibration steps, and configuration instructions are in the [software guide](docs/en/software-guide.md).
+
+### Build the applications
+
+On a Linux x86-64 build host with Docker Engine, Bash, GNU tar, `sha256sum`, and `file`, run these commands from this repository's root:
+
+```sh
+docker build -f deploy/Dockerfile -t easyduck-build:1.98.1 .
+docker run -d --name easyduck-build --network none easyduck-build:1.98.1
+bash deploy/build.sh
+(cd models && sha256sum -c SHA256SUMS)
+```
+
+Creating the build environment requires network access. ARM64 binaries are written to `build/bin/`. If the named container already exists, follow [build and deployment](docs/en/deployment.md). The board SDK builds complete system images; this repository's installer handles application files and service integration.
 
 ## Architecture
 
@@ -185,243 +201,43 @@ New input clients can reuse daemon interfaces. A replacement IMU needs a driver 
 
 The setup page requires login, but the control page (`:9527`) and calibration workbench (`:8766`) do not authenticate their own API requests. They listen on all interfaces by default. Same-origin checks and control ownership are not account authentication; use these services only on a trusted network and do not expose their ports to the Internet.
 
-## Build
 
-Run from the cloned repository root on a **Linux x86-64 build host** with Bash, Docker Engine, GNU tar, `sha256sum`, and `file`:
+## Documentation
 
-```sh
-docker build -f deploy/Dockerfile -t easyduck-build:1.98.1 .
-docker run -d --name easyduck-build --network none easyduck-build:1.98.1
-bash deploy/build.sh
-(cd models && sha256sum -c SHA256SUMS)
-```
-
-Creating the build image requires network access. Application builds then use the Cargo lockfile and an offline dependency cache. The Dockerfile selects Rust 1.98.1 and the `aarch64-unknown-linux-gnu` target; the workspace declares Rust 1.89 as its minimum. This is not a native Windows build.
-
-If the container already exists but is stopped, use `docker start easyduck-build`. Dependency changes may require rebuilding the image. Toolchain overrides are documented in [build and deployment](docs/en/deployment.md).
-
-| Output | Contents |
+| Goal | Read |
 | --- | --- |
-| `build/bin/` | Four ARM64 executables |
-| `build/logs/arm-build.log` | Build log |
-| `build/binaries-SHA256SUMS` | Executable checksums |
-| `build/binary-types.txt` | Binary architecture information |
+| Install, configure, and operate | [Software guide](docs/en/software-guide.md) |
+| Build, install, or roll back applications | [Deployment](docs/en/deployment.md) |
+| Configure networking and gamepad pairing/reconnection | [Connection setup](docs/en/connection-setup.md) · [USB/2.4 GHz gamepads](docs/en/usb-gamepad.md) |
+| Calibrate servos and orientation sensors | [Calibration](docs/en/calibration.md) · [IMU integration](docs/en/imu-drivers.md) |
+| Understand policy interfaces and provenance | [Motion policies](docs/en/models.md) |
+| Understand battery handling | [Low-battery protection](docs/en/low-battery.md) |
+| Browse every guide and module introduction | [English documentation index](docs/en/README.md) |
 
-Model checksums verify file integrity, not behavior. Complete firmware requires a separate SDK workflow for kernel, device tree, rootfs, service enablement, and packaging.
+## Repository layout
 
-## Installation and configuration
-
-### Stage files on the build host
-
-After building:
-
-```sh
-python3 deploy/install.py --root build/stage --profile examples
-```
-
-This installs binaries, models, web resources, templates, service definitions, and license files into a dedicated staging directory. It does not access hardware or start services. Existing files in the staging directory may be updated.
-
-`examples` provides format examples; `board` provides TaishanPi hardware reference parameters. **Both are uncalibrated templates with policies disabled.** Only `board` explicitly enables low-battery sit protection.
-
-Here, `[policy] enabled = false` prevents the controller from loading motion policies; it is not merely the initial torque-off state. After completing calibration and checking model paths/dependencies, set `[policy] enabled = true` in the target's `/etc/robot/robotd.toml` to load policies on the next daemon start. Support the robot before restarting or changing service ownership. Loading policies still does not itself request walking or torque on.
-
-### Install on the robot
-
-Prepare target dependencies, transfer the installation source and ARM64 binaries to the board, support the robot, and stop conflicting services. Then run from the source directory **on the board**:
-
-```sh
-sudo python3 deploy/install.py --root / --profile board --install-on-board
-```
-
-The installer prints a backup directory with `manifest.json`. Existing `/etc/robot/` files are preserved by default. `--replace-config` replaces configuration and creates backups; do not use it casually on a calibrated robot.
-
-Install the setup page and reconnect timer with an **existing system account**, replacing `your-user`:
-
-```sh
-sudo bash deploy/setup/install.sh --port 80 --user your-user
-```
-
-This starts the setup services, uses the existing account's system password, and preserves an existing `/etc/easyduck/setup.env`. It does not create an account, set passwords, configure SSH, or create USB networking. See [connection setup](docs/en/connection-setup.md).
-
-Preview normal-control startup commands before executing them on the prepared target:
-
-```sh
-bash deploy/start.sh --preview
-sudo bash deploy/start.sh --execute
-```
-
-This starts normal-control services, not calibration. It does not replace setup-page installation or prove that boot-time service enablement is complete. Dependency setup, verification, and rollback are covered in [deployment](docs/en/deployment.md) and the [software guide](docs/en/software-guide.md).
-
-### Runtime files
-
-| Board path | Purpose |
+| Directory | Responsibility |
 | --- | --- |
-| `/etc/robot/robotd.toml` | Hardware, policy paths, safety, audio |
-| `/etc/robot/visual_calibration.json` | Joint and per-model IMU calibration |
-| `/etc/robot/zero_pos.json` | Calibration baseline and legacy fallback inputs |
-| `/etc/robot/scs_joint_gains.json` | Joint gains |
-| `/etc/easyduck/setup.env` | Setup account and ports |
-| `/opt/robot/daemon/policies/` | Installed policies |
-
-Keep robot-specific calibration, credentials, Wi-Fi profiles, Bluetooth pairings, and browser sessions out of distributable templates. File precedence is explained in [configuration](docs/en/configuration.md).
-
-## Calibration
-
-Support the robot before entering calibration: service handoff stops normal control and requests torque release. If servo power or communication is faulty, a successful page switch does not prove that every servo has released torque. Never manually force a powered joint.
-
-Assign unique servo IDs for a new robot; existing IDs do not need to be assigned again. For each joint, set its initial hardware center and HOME, record safe travel limits, compare the model's positive direction with a physical step, and save. Hardware center and HOME are separate operations. Later HOME corrections do not require resetting the center, direction, or limits.
-
-After saving all joints, return them to HOME, inspect the actual torso, and record the whole-body reference pose. The template counts `2048` and `0–4095` are placeholders, not measured calibration.
-
-**Check IMU detects only BNO085 and LSM6DSV16X.** Capture upright and at least one of forward-down/left-down; backward-down and right-down are also available. Hold each pose still for at least two seconds. Compute the installation rotation, compare model tilt with the physical body, capture stationary bias, and save.
-
-Export a JSON backup after both calibrations. Importing produces a draft: inspect it and save all drafts to persist it. Use a backup only for its original robot. See [calibration](docs/en/calibration.md) for the workbench and hardware-free `--mock` preview. UI labels are currently Chinese.
-
-## Web and gamepad controls
-
-Use the board's reachable address after installation; these application scripts do not create a fixed IP.
-
-| Page | Default URL |
-| --- | --- |
-| Connection setup | `http://BOARD_IP/` |
-| Web controller | `http://BOARD_IP:9527/` |
-| Calibration | `http://BOARD_IP:8766/`, after service handoff |
-
-### Browser
-
-Choose **用网页控制** (use web control), or continue if already owned by this page. Request **默认站姿** (default pose) to check the stance before **开启行走** (enable walking).
-
-| Input | Action |
-| --- | --- |
-| Left joystick | Forward/backward, left/right turn |
-| Right joystick | Head pitch/yaw |
-| Two sliders | Neck pitch and head roll; **头部回中** resets head commands |
-| **按住鸣叫** | Sound and mouth opening ramp up; release stops sound and closes the mouth |
-| Sit/stand, pickup | Shown with available models and enabled in permitted states |
-| Keyboard | `W/S` forward/backward, `A/D` turn, Space torque off |
-
-Speed defaults to 50%. Releasing the drive joystick or leaving the window clears movement input; it does not release support torque. **断力** releases torque, so support the body first.
-
-### USB / 2.4 GHz receivers
-
-Plug the receiver into a USB host port on the board, then turn on the controller in its 2.4 GHz mode and pair it with its receiver as instructed by the controller manufacturer. This connection does not use the setup page's Bluetooth scan.
-
-The tested receiver presents USB ID `045e:028e` and appears in Linux as **Microsoft X-Box 360 pad**. Its connection, button mapping, and robot control have been tested on hardware. This does not establish compatibility with every 2.4 GHz controller.
-
-Use firmware built with the SDK's `xpad` support and boot-loading rule. Installing application files alone does not install a kernel driver. The SDK image build now includes these inputs and checks the final unpacked image; see [USB / 2.4 GHz gamepad support](docs/en/usb-gamepad.md).
-
-If the web page currently owns control, choose **交还手柄**, release the sticks, triggers, and buttons, and wait until the page shows gamepad ownership. Handoff alone does not enable walking: use **Start**, which corresponds to **Options** in the table below. **A** requests pickup.
-
-| Xbox-style input | Equivalent in the PS5 table below |
-| --- | --- |
-| Start | Options |
-| A / B / X / Y | Cross / Circle / Square / Triangle |
-| LB / RB | L1 / R1 |
-| LT / RT | L2 / R2 |
-| Back or Select | Create |
-| Guide | PS |
-
-The receiver may appear as **Receiver Update** while the controller is disconnected, then switch to the Xbox device when connected. Back/Select is not a normal stop button: holding it about two seconds requests system shutdown.
-
-### PS5 DualSense
-
-Hold **PS + Create** until the light flashes, then scan and pair in setup. Wake a paired pad with PS. To hand over from explicit web control, choose **交还手柄**, release all sticks/triggers, and wait for neutral-input handoff.
-
-| Input | Action |
-| --- | --- |
-| Options | Toggle walking; disabling returns to the default pose |
-| Left stick | Forward/backward and lateral movement |
-| Right stick left/right | Turn |
-| D-pad down / Cross | Sit/stand / pickup, if supported in the current state |
-| Triangle | Toggle head mode: left stick head pitch/yaw, right stick neck pitch/head roll |
-| Circle | Retained body-mode input mapping; body commands are zeroed by the current XGO path |
-| R2 / L2 | Mouth opening plus short chirp / held vocalization |
-| Square | Roulade request, subject to model and action state |
-| L1 / R1 | Retained kick requests; not operational in the shipped XGO profile |
-| PS | Torque off in managed-control mode |
-| Create held about 2 seconds | Submit a system-shutdown request; do not rely on a validated pre-shutdown sit in the XGO profile |
-
-Gamepad mapping differs from the browser: lateral movement is on the left stick, turning on the right. Only one control owner is active. Create is not a normal stop button.
-
-Low-battery handling is separate from manual shutdown and does **not** shut down Linux. See [low-battery protection](docs/en/low-battery.md) for timing and failure handling.
-
-## Diagnostics and tests
-
-Read-only target diagnostics:
-
-```sh
-systemctl status robotd padd xgoduck-web
-journalctl -u robotd -f
-/opt/robot/daemon/current/bin/robotctl monitor
-```
-
-For disabled UI buttons, inspect connection freshness, IMU readiness, ownership, neutral-input handoff, and the displayed reason before requesting actions.
-
-Run Rust tests on the Linux build host without exposing robot devices:
-
-```sh
-docker run --rm --network none \
-  --mount type=bind,src="$(pwd)/runtime",dst=/work/runtime,readonly \
-  -e CARGO_TARGET_DIR=/tmp/easyduck-tests -w /work/runtime \
-  easyduck-build:1.98.1 cargo test --locked --offline --workspace
-```
-
-Web tests from the repository root, with Python and Node.js installed:
-
-```sh
-python3 -m unittest discover -s web/tests -v
-node web/tests/controls.test.cjs
-```
-
-These checks do not validate physical motion. Component guides describe additional tests and mock previews.
-
-Check documentation pairs, examples, and local links without robot access:
-
-```sh
-python3 tools/check_docs.py
-```
-
-### Retained infrastructure and limits
-
-- `robotctl configure` edits local TOML using the daemon's parameter schema; `monitor` reads robot telemetry and the optional read-only input tap exposed by `padd`.
-- `robotctl net/system/update` and parts of pairing/status use `configd`, `updaterd`, or other external services. Their protocol/client definitions do not provide those servers. The included setup webpage instead calls NetworkManager and BlueZ directly.
-- The kinematics crate parses an embedded MJCF model and implements forward kinematics/head aiming. This is not a bundled MuJoCo simulator or training environment; the legacy `robot.look` intent path must not be equated with the XGO head-command path.
-- Audio includes seeded synthesis, WAV banks, live vocalization, and chorale synthesis/state code. Multi-robot discovery/transport is not supplied as a complete service here, so chorale code does not imply an out-of-the-box multi-robot feature.
-- `robotd --fake` and calibration `--mock` support hardware-free development; neither simulates real contact dynamics. Optional `ROBOTD_IO_TRACE` records feedback, inference, and wire events without becoming a model-training pipeline.
-
-## Project structure
-
-| Path | Contents |
-| --- | --- |
-| [runtime/](docs/en/runtime.md) | Rust daemon, gamepad client, CLI, sound generator, shared crates |
-| [web/](docs/en/web-control.md) | Browser controller and Python gateway |
-| [calibration/](docs/en/calibration.md) | Servo/IMU workbench, meshes, local browser libraries |
-| [config/](docs/en/configuration.md) | Uncalibrated templates and board parameters |
-| [models/](docs/en/models.md) | Five policies, interfaces, source manifest, hashes |
-| [deploy/](docs/en/deployment.md) | Build, install, verify, rollback, systemd, kernel patch |
-| [deploy/setup/](docs/en/connection-setup.md) | Wi-Fi, PS5 pairing/reconnection, page navigation |
-| [docs/](docs/en/README.md) | Paired English and Simplified Chinese guides |
-| [examples/imu/](examples/imu/README.md) | Incomplete driver skeletons for developers |
-| [assets/images/](assets/images/) | Shared hardware photos for both READMEs |
-| [assets/demos/](assets/demos/) | Shared demonstration GIFs for both READMEs |
-| [tools/check_docs.py](tools/check_docs.py) | Documentation consistency and local-link checks |
-| [Software guide](docs/en/software-guide.md) | Detailed installation and operation |
-| [IMU drivers](docs/en/imu-drivers.md) | Configuration and shared IMU interface |
-| [robotctl](docs/en/robotctl.md) | CLI reference |
-| [Sound generator](docs/en/sounds.md) | Sound-bank generation |
+| [runtime/](runtime/README.md) | Rust daemon, gamepad client, CLI, sound generator, and shared libraries |
+| [web/](web/README.md) | Browser remote and Python gateway |
+| [calibration/](calibration/README.md) | Servo/IMU calibration and 3D workbench |
+| [config/](config/README.md) | Public configuration templates and board parameters |
+| [models/](models/README.md) | ONNX models, provenance, and hashes |
+| [deploy/](deploy/README.md) | Build, installation, rollback, services, and driver integration |
+| [docs/](docs/README.md) | Paired English and Chinese guides |
+| [assets/](assets/README.md) | Hardware photos and demonstration GIFs |
+| [examples/](examples/README.md) · [tools/](tools/README.md) | Development examples and repository checks |
 
 ## Contributing
 
-Follow the [repository maintenance rules](AGENTS.md) and [bilingual documentation rules](docs/AGENTS.md).
+Issues and improvements are welcome. Include hardware, model configuration, reproduction steps, and logs in reports. Run the relevant checks before submitting code. Arrange physical support and access to power isolation for motion tests.
 
-Describe the problem, expected behavior, relevant component, hardware/model configuration, and checks performed. Distinguish simulation results from physical observations. Keep private calibration, credentials, logs, build outputs, and firmware files out of contributions.
+See the [repository maintenance rules](AGENTS.md). Keep documentation changes paired across English and Chinese. Record provenance and licenses for new code/assets; keep private calibration, credentials, and build outputs outside the repository.
 
-Preserve attribution and add provenance/license records for new assets. Changes to observation order, joint signs, or action scaling must keep the model/runtime contract consistent. Build and test before proposing changes; a physical test requires appropriate support and a clear action plan.
+## Acknowledgments and license
 
-## License and provenance
+EasyDuck's Rust foundation comes from Pollen Robotics' Microduck. Parts of its motion flow, web UI, and models come from XGO Duck; training references XGO Duck RL and Microduck RL. Thanks to those projects and their contributors.
 
-The root project license is [Apache-2.0](LICENSE). Third-party components retain their own terms: calibration IMU Python code uses GPL-3.0-or-later, the Linux kernel patch GPL-2.0-only, and three.js MIT.
+The root project license is [Apache-2.0](LICENSE). Third-party content retains its own terms, including GPL-3.0-or-later, GPL-2.0-only, and MIT. Redistribution terms for four motion models and some derived content remain unresolved in the recorded upstream revisions and require file-level review.
 
-The Rust runtime derives from Pollen Robotics' Microduck. Parts of motion sequencing, web code, and pretrained models derive from recorded XGO Duck revisions. Four upstream models and some derived content have unresolved redistribution terms; the self-trained posture model has separately recorded provenance. Attribution does not grant redistribution rights.
-
-Read [NOTICE](NOTICE), [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), the [model manifest](models/manifest.json), and [license texts](LICENSES) for file-level details. Do not apply the root license to every bundled model or asset.
+See [NOTICE](NOTICE), [third-party notices](THIRD_PARTY_NOTICES.md), the [model manifest](models/manifest.json), and [license texts](LICENSES/README.md) for provenance, adaptations, and license scope.
