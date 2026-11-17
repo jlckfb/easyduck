@@ -1376,7 +1376,11 @@ async fn control_loop<T: RobotIo>(
                 // Log the first and then every tenth, so a persistent fault is visible
                 // without a wall of identical lines.
                 if n == 1 || n.is_multiple_of(10) {
-                    tracing::warn!(error = %e, consecutive = n, "bus read failed");
+                    if let duck_control::io::IoError::ServoStatus{id,status}=&e {
+                        tracing::warn!(id,status,consecutive=n,"servo status alarm; feedback withheld");
+                    } else {
+                        tracing::warn!(error = %e, consecutive = n, "bus read failed");
+                    }
                 }
                 None
             }

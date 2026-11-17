@@ -43,6 +43,10 @@ These are Cargo dependency edges, not proof that every optional runtime path is 
 - ONNX Runtime is loaded dynamically when needed; successful compilation does not prove a usable target runtime or model.
 - Preserve joint order, units, calibration signs, freshness, and the model contract. FakeIo and trace replay do not simulate physical contact or validate motion. Helper presence does not prove every controller path uses it.
 
+- SCS device status is separate from transport failure. A complete, validated reply carrying a non-voltage alarm returns `IoError::ServoStatus`; robotd logs it as a device-status alarm. That feedback remains withheld under the existing protections, with no relaxation of arming or motion checks. Timeouts, unexpected payload lengths, and checksum failures remain communication errors. This classification neither diagnoses damaged hardware nor resolves actual timeouts.
+
+- Temporary diagnostics can set `ROBOTD_SCS_CAPTURE_TIMEOUTS=1` to log a timed-out request, up to 256 raw received bytes, remaining parser bytes, and the queued-byte count. It is off by default and adds no servo request or retry; diagnostic output is not evidence of recovery.
+
 ## Further reading
 
 - [Detailed guide](../../docs/en/models.md)

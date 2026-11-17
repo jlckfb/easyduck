@@ -139,7 +139,7 @@ fn load_limits(path: &Path) -> Result<[[u16; 2]; NUM_JOINTS]> {
     parse_limits(&bytes)
 }
 
-pub struct ScsIo { port: Box<dyn SerialPort>, imu: Option<Reader>, last_imu: ImuData, imu_misses: (u64, u64), kd: u16, enable_gain: Option<u16>, armed: bool, cal_zero: [u16; NUM_JOINTS], cal_sign: [f64; NUM_JOINTS], limits: [[u16; 2]; NUM_JOINTS], gain_profile: Option<JointGainProfile>, turn_offsets: [i32;NUM_JOINTS] }
+pub struct ScsIo { port: Box<dyn SerialPort>, imu: Option<Reader>, last_imu: ImuData, imu_misses: (u64, u64), kd: u16, enable_gain: Option<u16>, armed: bool, cal_zero: [u16; NUM_JOINTS], cal_sign: [f64; NUM_JOINTS], limits: [[u16; 2]; NUM_JOINTS], gain_profile: Option<JointGainProfile>, turn_offsets: [i32;NUM_JOINTS], capture_timeouts: bool }
 
 fn checksum(body: &[u8]) -> u8 { (!body.iter().map(|v| *v as u16).sum::<u16>()) as u8 }
 fn frame(id: u8, instr: u8, params: &[u8]) -> Vec<u8> { let mut b = vec![id, (params.len()+2) as u8, instr]; b.extend_from_slice(params); let mut o=vec![0xff,0xff]; o.extend_from_slice(&b); o.push(checksum(&b)); o }
@@ -173,17 +173,17 @@ fn response_payload(req: &[u8], packet: &[u8], expected: usize) -> Result<Option
     if packet.len()!=4+packet[3] as usize || checksum(&packet[2..packet.len()-1])!=packet[packet.len()-1] {
         return Err(IoError::Bus("invalid SCS reply length/checksum".into()));
     }
+    let actual=packet.len()-6;
+    if actual==0 && expected>0 && packet[4] & !0x01==0 {return Ok(None);} // Late write ACK.
+    if actual!=expected {return Err(IoError::ShortRead{what:"SCS response",expected,got:actual});}
     // Voltage-only status is advisory; retain every other alarm and packet check.
     if packet[4] & !0x01 != 0 {
         crate::io_trace::alarm(req[2],packet[4],req.get(5).copied(),packet);
         tracing::warn!(id=req[2],status=packet[4],overcurrent=packet[4]&8!=0,
             encoder=packet[4]&2!=0,overtemp=packet[4]&4!=0,
             packet=?packet,"validated SCS response alarm; not a register decode error");
-        return Err(IoError::Bus(format!("SCS ID {} status error {}",req[2],packet[4])));
+        return Err(IoError::ServoStatus { id: req[2], status: packet[4] });
     }
-    let actual=packet.len()-6;
-    if actual==0 && expected>0 {return Ok(None);} // Late write ACK carries no sensor data.
-    if actual!=expected {return Err(IoError::ShortRead{what:"SCS response",expected,got:actual});}
     Ok(Some(packet[5..packet.len()-1].to_vec()))
 }
 
@@ -208,17 +208,23 @@ impl ScsIo {
                 Some(Reader::start(c,cal).map_err(|e|IoError::Bus(e.to_string()))?)
             },None=>None
         };
-        Ok(Self { cal_zero:calibration.zero, cal_sign:calibration.sign, port: serial, imu, last_imu: ImuData::default(), imu_misses:(0,0), kd:0, enable_gain:None, armed:false, limits, gain_profile, turn_offsets:[0;NUM_JOINTS] })
+        Ok(Self { cal_zero:calibration.zero, cal_sign:calibration.sign, port: serial, imu, last_imu: ImuData::default(), imu_misses:(0,0), kd:0, enable_gain:None, armed:false, limits, gain_profile, turn_offsets:[0;NUM_JOINTS], capture_timeouts:std::env::var_os("ROBOTD_SCS_CAPTURE_TIMEOUTS").is_some_and(|v|v=="1") })
     }
     fn response(&mut self, req: &[u8], expected: usize) -> Result<Vec<u8>> {
         self.port.clear(serialport::ClearBuffer::All).ok();
         self.port.write_all(req).map_err(|e|IoError::Bus(e.to_string()))?;
         self.port.flush().map_err(|e|IoError::Bus(e.to_string()))?;
         let end=Instant::now()+READ_TIMEOUT;
+        // Optional bounded, stack-only evidence; no extra servo requests or retries.
+        let mut evidence=self.capture_timeouts.then(||([0u8;256],0usize,0usize,0usize,None::<Instant>,None::<Instant>));
         let mut buf=Vec::new(); let mut one=[0u8;128];
         while Instant::now()<end {
             match self.port.read(&mut one) {
                 Ok(n) if n>0 => {
+                    if let Some((raw,used,total,chunks,first,last))=evidence.as_mut() {
+                        let take=n.min(raw.len()-*used);raw[*used..*used+take].copy_from_slice(&one[..take]);
+                        *used+=take;*total+=n;*chunks+=1;let now=Instant::now();first.get_or_insert(now);*last=Some(now);
+                    }
                     buf.extend_from_slice(&one[..n]);
                     loop {
                         let Some(start)=buf.windows(2).position(|w|w==[0xff,0xff]) else {
@@ -240,6 +246,15 @@ impl ScsIo {
                 Err(e) if e.kind()==std::io::ErrorKind::TimedOut => {},
                 Err(e) => return Err(IoError::Bus(e.to_string())),
             }
+        }
+        if let Some((raw,used,total,chunks,first,last))=evidence {
+            let began=end-READ_TIMEOUT;
+            let pending=self.port.bytes_to_read().ok();
+            tracing::warn!(id=req[2],request=?req,received=?&raw[..used],buffered=?buf,
+                total_received=total,chunks,truncated=total>used,pending=?pending,
+                elapsed_us=began.elapsed().as_micros(),
+                first_rx_us=?first.map(|t|t.duration_since(began).as_micros()),
+                last_rx_us=?last.map(|t|t.duration_since(began).as_micros()),"SCS timeout receive evidence");
         }
         Err(IoError::Bus("SCS response timeout".into()))
     }
@@ -708,6 +723,26 @@ mod voltage_status_tests {
         assert_eq!(response_payload(&req,&frame(22,1,&[0x34,0x02]),2).unwrap(),None);
         assert_eq!(response_payload(&req,&frame(12,1,&[]),2).unwrap(),None);
     }
+    #[test]
+    fn servo_status_is_distinct_from_transport_failure() {
+        let req=frame(32,2,&[56,15]);
+        let mut data=[0u8;15];data[0]=0x34;data[1]=0x02;data[9]=2;
+        let error=response_payload(&req,&frame(32,2,&data),15).unwrap_err();
+        assert!(matches!(error,IoError::ServoStatus{id:32,status:2}),"a validated device alarm is not a failed bus transaction");
+    }
+    #[test]
+    fn servo_status_does_not_override_wrong_payload_length() {
+        let req=frame(32,2,&[56,15]);
+        let error=response_payload(&req,&frame(32,2,&[0u8;14]),15).unwrap_err();
+        assert!(matches!(error,IoError::ShortRead{expected:15,got:14,..}));
+    }
+    #[test]
+    fn servo_status_does_not_override_bad_checksum() {
+        let req=frame(32,2,&[56,15]);
+        let mut reply=frame(32,2,&[0u8;15]);*reply.last_mut().unwrap()^=1;
+        assert!(matches!(response_payload(&req,&reply,15),Err(IoError::Bus(_))));
+    }
+
 }
 
 

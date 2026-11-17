@@ -63,6 +63,9 @@ pub enum IoError {
     },
     #[error("bus transaction failed: {0}")]
     Bus(String),
+    /// A validated reply reports device status; transport itself succeeded.
+    #[error("SCS ID {id} status error {status}")]
+    ServoStatus { id: u8, status: u8 },
     /// A `sync_read` that returns the wrong number of blocks, or a block of the wrong
     /// length, means a device did not answer. Reported rather than papered over: a
     /// silently short read would leave stale values in half the joint array.
