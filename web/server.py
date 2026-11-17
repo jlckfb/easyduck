@@ -328,12 +328,15 @@ class Gateway:
                     self.stop_vocal()
                 self.preference = preference
                 try:
-                    return self.update_control(self.rpc.call('robot.control.select', {'preference':preference}))
+                    result = self.update_control(self.rpc.call('robot.control.select', {'preference':preference}))
+                    self.last_error = ''
+                    return result
                 except ApiError as exc:
                     if 'unknown method' not in str(exc):
                         raise
                     self.owner = client if preference == 'web' else None
                     self.control = self.local_control()
+                    self.last_error = ''
                     return self.control
             if route == 'mode' and body == {'mode':'off'}:
                 self.stop_vocal()

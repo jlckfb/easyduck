@@ -56,6 +56,20 @@ class GatewayTests(unittest.TestCase):
     def test_control_claim_itself_sends_no_motion(self):
         self.claim();self.assertEqual(self.rpc.calls,[])
         self.assertEqual(self.rpc.control['owner'],'web')
+    def test_successful_control_claim_clears_previous_action_error_without_motion(self):
+        self.gateway.last_error='当前由手柄控制，或正在等待摇杆归零'
+        self.claim()
+        self.assertEqual(self.gateway.last_error,'')
+        self.assertEqual(self.rpc.calls,[])
+        self.assertEqual(self.gateway.control['owner'],'web')
+
+    def test_refused_control_claim_does_not_clear_error(self):
+        self.gateway.last_error='previous failure'
+        self.rpc.refuse='robot.control.select'
+        with self.assertRaises(ApiError):self.claim()
+        self.assertEqual(self.gateway.last_error,'previous failure')
+        self.assertEqual(self.rpc.calls,[])
+
     def test_default_pose_uses_enable_and_init(self):
         self.claim();self.request('mode',{'mode':'hold'})
         self.assertEqual([c[0] for c in self.rpc.calls],['robot.xgo.command','robot.enable','robot.init'])

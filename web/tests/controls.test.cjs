@@ -38,5 +38,11 @@ const run=code=>vm.runInContext(code,ctx);const event=(x,y)=>({clientX:x,clientY
  const start=requests.length;$('speed').value='80';$('speed').oninput();await new Promise(setImmediate);assert.equal(drive.disabled,true);assert(requests.slice(start).every(r=>r.url==='/api/command'));
  statusFixture={...statusFixture,enabled:undefined,state:{policy:'xgo_rise'}};await poll();assert.equal(drive.disabled,true,'old daemon posture is still active');
  statusFixture={...statusFixture,enabled:false,state:{policy:'xgo_off'}};await poll();assert.equal(drive.disabled,false);assert.equal(drive.querySelector('b').textContent,'开启行走');
+ // A rejected action is historical feedback, not a broken telemetry connection.
+ statusFixture={...statusFixture,last_error:'当前由手柄控制，或正在等待摇杆归零',connection_error:'',control:{owner:'web',ready:true,generation:null},this_page:true,feedback_age_ms:5};
+ await poll();assert.equal(run('webAllowed'),true,'a previous handoff refusal must not permanently lock the recovered web controller');
+ assert.equal(drive.disabled,false);
+ statusFixture={...statusFixture,connection_error:'robot IPC disconnected'};await poll();assert.equal(run('webAllowed'),false,'an actual telemetry connection failure must still block actions');
+ statusFixture={...statusFixture,connection_error:'',feedback_age_ms:2000};await poll();assert.equal(run('webAllowed'),false,'stale feedback must still block actions');
  console.log('PASS: walking/turning, independent head axes, recenter, vocal rise/release, blur and ownership; mocked network only');
 })().catch(e=>{console.error(e);process.exitCode=1;});

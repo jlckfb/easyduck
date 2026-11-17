@@ -135,7 +135,7 @@ setInterval(()=>{if(!pageClosing&&!document.hidden&&!commandBusy)sendCommand();}
 // Missing counters or per-servo torque remain unknown.
 setInterval(async()=>{if(statusBusy||document.hidden)return;statusBusy=true;try{
 const r=await fetch('/api/status',{headers:{'X-Control-Id':controlId},signal:AbortSignal.timeout(2500)});if(!r.ok)throw new Error('机器人状态读取失败，请检查连接');const s=await r.json();
-const fresh=s.feedback_age_ms!=null&&s.feedback_age_ms<1500&&!s.last_error;
+const fresh=s.feedback_age_ms!=null&&s.feedback_age_ms<1500&&!s.connection_error;
 const control=s.control||{};
 if(controlGeneration!==control.generation){resetInput();controlGeneration=control.generation;}
 webAllowed=fresh&&control.owner==='web'&&control.ready&&s.this_page;
