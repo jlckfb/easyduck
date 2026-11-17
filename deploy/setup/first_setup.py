@@ -85,27 +85,27 @@ class App:
             return None
         with self.lock:
             session = self.sessions.get(token)
-            if session and session['until'] > time.time():
+            if session and session['until'] > time.monotonic():
                 return session
             self.sessions.pop(token, None)
         return None
 
     def login(self, ip, body):
         with self.lock:
-            hits = [t for t in self.failures.get(ip, []) if time.time() - t < 300]
+            hits = [t for t in self.failures.get(ip, []) if time.monotonic() - t < 300]
             if len(hits) >= 5:
                 raise SetupError('rate_limit', '登录尝试过多，请5分钟后重试。')
         if not self.auth.verify(body.get('username', ''), body.get('password', '')):
             with self.lock:
                 if len(self.failures) > 512: self.failures.clear()
-                self.failures[ip] = hits + [time.time()]
+                self.failures[ip] = hits + [time.monotonic()]
             raise SetupError('login_failed', '账号或密码错误，或该系统账号不可登录。')
         token = secrets.token_urlsafe(32)
         with self.lock:
             self.failures.pop(ip, None)
-            self.sessions = {k:v for k,v in self.sessions.items() if v['until'] > time.time()}
+            self.sessions = {k:v for k,v in self.sessions.items() if v['until'] > time.monotonic()}
             if len(self.sessions) >= 64: self.sessions.pop(next(iter(self.sessions)))
-            self.sessions[token] = {'csrf':secrets.token_urlsafe(32), 'until':time.time()+28800, 'token':token}
+            self.sessions[token] = {'csrf':secrets.token_urlsafe(32), 'until':time.monotonic()+28800, 'token':token}
         return token
 
     def start_job(self, action, body):

@@ -150,6 +150,46 @@ class FakeAuth:
     username='test-user'
     def verify(self,user,password):return user=='test-user' and password=='test-only-password'
 
+class SessionClockTests(unittest.TestCase):
+    def setup_clock(self):
+        clock={'wall':1777319000.0,'elapsed':100.0}
+        wall_patch=patch.object(web.time,'time',side_effect=lambda:clock['wall'])
+        elapsed_patch=patch.object(web.time,'monotonic',side_effect=lambda:clock['elapsed'])
+        wall_patch.start();self.addCleanup(wall_patch.stop)
+        elapsed_patch.start();self.addCleanup(elapsed_patch.stop)
+        return clock,web.App(FakeBackend(),FakeAuth())
+
+    def test_network_time_jump_does_not_expire_current_login(self):
+        clock,app=self.setup_clock()
+        token=app.login('client',{'username':'test-user','password':'test-only-password'})
+        clock['wall']+=17567328
+        clock['elapsed']+=10
+        self.assertIsNotNone(app.session('easyduck_setup='+token))
+
+    def test_backward_clock_change_cannot_extend_login_lifetime(self):
+        clock,app=self.setup_clock()
+        token=app.login('client',{'username':'test-user','password':'test-only-password'})
+        clock['wall']-=17567328
+        clock['elapsed']+=28800
+        self.assertTrue(app.session('easyduck_setup='+token) is None)
+
+    def test_network_time_jump_does_not_discard_another_valid_login(self):
+        clock,app=self.setup_clock()
+        token=app.login('first',{'username':'test-user','password':'test-only-password'})
+        clock['wall']+=17567328
+        clock['elapsed']+=10
+        app.login('second',{'username':'test-user','password':'test-only-password'})
+        self.assertIsNotNone(app.session('easyduck_setup='+token))
+
+    def test_rate_limit_expires_by_elapsed_time_after_clock_change(self):
+        clock,app=self.setup_clock()
+        for _ in range(5):
+            with self.assertRaises(c.SetupError):app.login('client',{'username':'test-user','password':'wrong'})
+        clock['wall']-=17567328
+        clock['elapsed']+=301
+        token=app.login('client',{'username':'test-user','password':'test-only-password'})
+        self.assertIsNotNone(app.session('easyduck_setup='+token))
+
 class HttpTests(unittest.TestCase):
     def setUp(self):
         self.app=web.App(FakeBackend(),FakeAuth())
