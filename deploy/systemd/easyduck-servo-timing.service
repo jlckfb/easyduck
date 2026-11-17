@@ -1,0 +1,13 @@
+[Unit]
+Description=Keep DDR frequency stable for servo bus timing
+ConditionPathExists=/sys/class/devfreq/dmc/governor
+Before=robotd.service xgoduck-calibration.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+RuntimeDirectory=easyduck-servo-timing
+RuntimeDirectoryMode=0700
+ExecStart=/bin/sh -ec 'test -s /run/easyduck-servo-timing/previous-governor || cat /sys/class/devfreq/dmc/governor > /run/easyduck-servo-timing/previous-governor; echo performance > /sys/class/devfreq/dmc/governor'
+ExecStop=/bin/sh -ec 'cat /run/easyduck-servo-timing/previous-governor > /sys/class/devfreq/dmc/governor'
+NoNewPrivileges=yes

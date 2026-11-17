@@ -1,3 +1,34 @@
+diff --git a/arch/arm64/boot/dts/rockchip/tspi-rk3566-user-v10-linux.dts b/arch/arm64/boot/dts/rockchip/tspi-rk3566-user-v10-linux.dts
+index 59b01e1..723f1ff 100644
+--- a/arch/arm64/boot/dts/rockchip/tspi-rk3566-user-v10-linux.dts
++++ b/arch/arm64/boot/dts/rockchip/tspi-rk3566-user-v10-linux.dts
+@@ -113,6 +113,7 @@
+ 	status = "okay";
+ 	pinctrl-names = "default";
+ 	pinctrl-0 = <&uart3m1_xfer>;
++	485_ctrl_gpio = <&gpio3 RK_PC4 GPIO_ACTIVE_HIGH>;
+ };
+ 
+ //User I2C2
+diff --git a/drivers/tty/serial/8250/8250_core.c b/drivers/tty/serial/8250/8250_core.c
+index 272256c..f126679 100644
+--- a/drivers/tty/serial/8250/8250_core.c
++++ b/drivers/tty/serial/8250/8250_core.c
+@@ -1019,6 +1019,12 @@ int serial8250_register_8250_port(const struct uart_8250_port *up)
+ 		uart->port.rs485	= up->port.rs485;
+ 		uart->rs485_start_tx	= up->rs485_start_tx;
+ 		uart->rs485_stop_tx	= up->rs485_stop_tx;
++		/*
++		 * Only fields listed here reach the port that actually runs, so a
++		 * DE pin found in probe has to be copied across explicitly.
++		 */
++		uart->de_gpio		= up->de_gpio;
++		uart->de_active_low	= up->de_active_low;
+ 		uart->lsr_save_mask	= up->lsr_save_mask;
+ 		uart->dma		= up->dma;
+ #ifdef CONFIG_ARCH_ROCKCHIP
+diff --git a/drivers/tty/serial/8250/8250_dw.c b/drivers/tty/serial/8250/8250_dw.c
+index dd019fe..4dfa5d7 100644
 --- a/drivers/tty/serial/8250/8250_dw.c
 +++ b/drivers/tty/serial/8250/8250_dw.c
 @@ -34,6 +34,9 @@
@@ -10,7 +41,7 @@
  #endif
  
  /* Offsets for the DesignWare specific registers */
-@@ -573,6 +576,8 @@
+@@ -573,6 +576,8 @@ static int dw8250_probe(struct platform_device *pdev)
  	int irq;
  	int err;
  	u32 val;
@@ -19,7 +50,7 @@
  
  	regs = platform_get_resource(pdev, IORESOURCE_MEM, 0);
  	if (!regs)
-@@ -617,6 +622,50 @@
+@@ -617,6 +622,50 @@ static int dw8250_probe(struct platform_device *pdev)
  	data->uart_16550_compatible = device_property_read_bool(dev,
  						"snps,uart-16550-compatible");
  
@@ -70,7 +101,7 @@
  	err = device_property_read_u32(dev, "reg-shift", &val);
  	if (!err)
  		p->regshift = val;
-@@ -718,8 +767,17 @@
+@@ -718,8 +767,17 @@ static int dw8250_probe(struct platform_device *pdev)
  	if (!data->skip_autocfg)
  		dw8250_setup_port(p);
  
@@ -90,6 +121,8 @@
  		data->data.dma.rxconf.src_maxburst = p->fifosize / 4;
  		data->data.dma.txconf.dst_maxburst = p->fifosize / 4;
  		up->dma = &data->data.dma;
+diff --git a/drivers/tty/serial/8250/8250_port.c b/drivers/tty/serial/8250/8250_port.c
+index 9602ecf..de08f74 100644
 --- a/drivers/tty/serial/8250/8250_port.c
 +++ b/drivers/tty/serial/8250/8250_port.c
 @@ -20,6 +20,7 @@
@@ -100,7 +133,7 @@
  #include <linux/platform_device.h>
  #include <linux/tty.h>
  #include <linux/ratelimit.h>
-@@ -1820,6 +1821,64 @@
+@@ -1820,6 +1821,64 @@ u16 serial8250_rx_chars(struct uart_8250_port *up, u16 lsr)
  }
  EXPORT_SYMBOL_GPL(serial8250_rx_chars);
  
@@ -165,7 +198,7 @@
  void serial8250_tx_chars(struct uart_8250_port *up)
  {
  	struct uart_port *port = &up->port;
-@@ -1827,19 +1886,36 @@
+@@ -1827,19 +1886,36 @@ void serial8250_tx_chars(struct uart_8250_port *up)
  	int count;
  
  	if (port->x_char) {
@@ -202,7 +235,15 @@
  	do {
  		serial_out(up, UART_TX, xmit->buf[xmit->tail]);
  		if (up->bugs & UART_BUG_TXRACE) {
-@@ -1875,8 +1951,16 @@
+@@ -1867,16 +1943,25 @@ void serial8250_tx_chars(struct uart_8250_port *up)
+ 			break;
+ 	} while (--count > 0);
+ 
+-	if (uart_circ_chars_pending(xmit) < WAKEUP_CHARS)
+-		uart_write_wakeup(port);
+-
+ 	/*
+ 	 * With RPM enabled, we have to wait until the FIFO is empty before the
  	 * HW can go idle. So we get here once again with empty FIFO and disable
  	 * the interrupt and RPM in __stop_tx()
  	 */
@@ -218,10 +259,14 @@
 +		 */
 +		serial8250_de_release(up);
 +	}
++
++	/* Release the half-duplex bus before TTY wakeups can add latency. */
++	if (uart_circ_chars_pending(xmit) < WAKEUP_CHARS)
++		uart_write_wakeup(port);
  }
  EXPORT_SYMBOL_GPL(serial8250_tx_chars);
  
-@@ -3410,6 +3494,14 @@
+@@ -3410,6 +3495,14 @@ void serial8250_init_port(struct uart_8250_port *up)
  	port->has_sysrq = IS_ENABLED(CONFIG_SERIAL_8250_CONSOLE);
  
  	up->cur_iotype = 0xFF;
@@ -236,13 +281,14 @@
  }
  EXPORT_SYMBOL_GPL(serial8250_init_port);
  
+diff --git a/include/linux/serial_8250.h b/include/linux/serial_8250.h
+index 46d76b0..9fe0872 100644
 --- a/include/linux/serial_8250.h
 +++ b/include/linux/serial_8250.h
-@@ -137,6 +137,23 @@
- 	struct uart_8250_em485 *em485;
+@@ -138,6 +138,23 @@ struct uart_8250_port {
  	void			(*rs485_start_tx)(struct uart_8250_port *);
  	void			(*rs485_stop_tx)(struct uart_8250_port *);
-+
+ 
 +	/*
 +	 * Half-duplex transceiver direction (DE/RE) pin, from the DT
 +	 * "485_ctrl_gpio" property. -1 when the board has none.
@@ -259,31 +305,7 @@
 +	 */
 +	int			de_gpio;
 +	bool			de_active_low;
- 
++
  	/* Serial port overrun backoff */
  	struct delayed_work overrun_backoff;
---- a/arch/arm64/boot/dts/rockchip/tspi-rk3566-user-v10-linux.dts
-+++ b/arch/arm64/boot/dts/rockchip/tspi-rk3566-user-v10-linux.dts
-@@ -130,6 +130,7 @@
- 	status = "okay";
- 	pinctrl-names = "default";
- 	pinctrl-0 = <&uart3m1_xfer>;
-+	485_ctrl_gpio = <&gpio3 RK_PC4 GPIO_ACTIVE_HIGH>;
- };
- 
- //User I2C2
---- a/drivers/tty/serial/8250/8250_core.c
-+++ b/drivers/tty/serial/8250/8250_core.c
-@@ -1019,6 +1019,12 @@
- 		uart->port.rs485	= up->port.rs485;
- 		uart->rs485_start_tx	= up->rs485_start_tx;
- 		uart->rs485_stop_tx	= up->rs485_stop_tx;
-+		/*
-+		 * Only fields listed here reach the port that actually runs, so a
-+		 * DE pin found in probe has to be copied across explicitly.
-+		 */
-+		uart->de_gpio		= up->de_gpio;
-+		uart->de_active_low	= up->de_active_low;
- 		uart->lsr_save_mask	= up->lsr_save_mask;
- 		uart->dma		= up->dma;
- #ifdef CONFIG_ARCH_ROCKCHIP
+ 	u32 overrun_backoff_time_ms;

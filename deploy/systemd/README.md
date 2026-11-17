@@ -10,6 +10,8 @@ Declarative application process management for systemd: startup commands, depend
 
 | File / directory | Responsibility |
 | --- | --- |
+| [easyduck-servo-timing.service](easyduck-servo-timing.service) | Hold DDR at its supported performance frequency before control/calibration starts; restore the previous governor when this service stops |
+| [robotd.service.d/15-servo-timing.conf](robotd.service.d/15-servo-timing.conf), [xgoduck-calibration.service.d/15-servo-timing.conf](xgoduck-calibration.service.d/15-servo-timing.conf) | Pull in the timing service before either owner opens the servo bus |
 | [robotd.service](robotd.service) | Main daemon and robot socket permissions |
 | [padd.service](padd.service) | Gamepad client user/groups and restart settings |
 | [xgoduck-web.service](xgoduck-web.service) | Python controller service |
@@ -27,6 +29,9 @@ Declarative application process management for systemd: startup commands, depend
 
 1. install.py places units/drop-ins under the target systemd directory; start.sh reloads systemd and starts the normal services when explicitly executed.
 2. Setup Navigator coordinates handoff; systemd Conflicts prevents calibration and normal services from running together. Restart policies recover process exits, not every hardware fault.
+
+
+The TaishanPi DDR frequency transition can delay software-controlled half-duplex direction switching. The timing service disables automatic DDR frequency changes while it remains active, using the normal supported maximum frequency. This increases idle power use; it does not change CPU frequency policy. It stays active across control/calibration handoffs. Systems without the DMC governor path skip it. This only reduces timing interference from DDR scaling; it is not evidence that all serial timeouts or servo status alarms are resolved.
 
 ## Boundaries and change notes
 
