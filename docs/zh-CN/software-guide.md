@@ -117,6 +117,8 @@ systemctl daemon-reload
 - 需要标定时执行 `systemctl start xgoduck-calibration.service`，正式控制服务会停止。结束后执行 `systemctl stop xgoduck-calibration.service`，再按启动步骤恢复正式服务。
 - 终止控制服务不等于舵机已经断力；操作或移动实物前核对断力状态。
 
+- 遥控页可设置 RGB 状态灯的开关、亮度和电量呼吸速度。颜色和闪烁方式见[状态灯对照表](web-control.md#rgb-状态指示灯)。
+
 ## 实物检查
 
 按串口反馈、舵机方向与限位、IMU 方向、承托下的上力、站立及各动作逐项检查。编译、模拟测试和模型结构检查不能证明实物动作正确。

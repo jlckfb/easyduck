@@ -23,8 +23,14 @@ The generic default is disabled, with a default threshold of 6.2 V; only the boa
 - If already energized and the model/sensors are available, use the sitting policy (`posture` in XGO, not fall-recovery `sitstand`) and clear other action inputs. Ordinary heartbeats or ownership handoff do not cancel sitting.
 - Run the sitting policy for at least 2 seconds, then release torque after measured leg speeds stay below 0.15 rad/s and measured-to-target angle errors below 0.15 rad for 0.5 seconds. At 6 seconds, release torque on timeout and log the reason without claiming successful sitting.
 - Release torque if the policy is unavailable or sensors fail; keep retrying failed torque-release writes. An already relaxed robot is not automatically energized.
-- Reject ordinary browser/gamepad actions, default-pose requests, enable requests, mode switches, and ordinary sounds until the daemon restarts. Manual torque release remains available; voltage recovery does not clear the latch.
+- While protection is active, browser and gamepad actions, default-pose requests, enable requests, mode switches, and ordinary sounds are locked. Manual torque release remains available. If the [status indicator](web-control.md#rgb-status-indicator) is enabled, it flashes red rapidly.
 - Do not shut down Linux. While protection is active, reject shutdown requests and bypass the old automatic-shutdown decision.
+
+## Automatic unlock after voltage recovery
+
+Once torque release is confirmed, the daemon checks fresh voltage readings from the servo bus. It unlocks automatically after voltage stays **above 6.6 V for 3 seconds**. A reading at or below 6.6 V, a failed read, or an interruption in sampling resets the timer.
+
+After unlocking, the rapid red flashes stop and the servos remain relaxed. Use the browser or gamepad to send a new action command. No computer connection or daemon restart is required.
 
 ## Sound bank
 
@@ -34,4 +40,4 @@ Deployment must update `robotd`, `sounds`, board configuration, and the sound ba
 
 ## Verification scope
 
-Offline checks cover thresholds, one-time triggering, invalid readings, sitting-state selection, transitions, audio preemption, no low-battery shutdown, and no automatic energizing. Physical sitting and speaker playback still require separately authorized device validation.
+Offline checks cover thresholds, one-time triggering, invalid readings, sitting-state selection, transitions, audio preemption, no low-battery shutdown, voltage-based recovery after confirmed torque release, and no automatic energizing. Physical sitting and speaker playback still require separately authorized device validation.

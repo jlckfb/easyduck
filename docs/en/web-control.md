@@ -23,6 +23,24 @@ node tests/controls.test.cjs
 
 Tests use mock RPC. See the [software guide](software-guide.md) for installation/startup.
 
+## RGB status indicator
+
+Use the **状态指示灯** (Status indicator) section to turn the WS2812B light on or off, adjust brightness and battery breathing speed, and see the current pattern. The light defaults to on, at 70% brightness and the fastest battery breathing speed (level 5). The speed setting applies only to the green, yellow, and red battery breathing patterns.
+
+| Light pattern | Meaning |
+| --- | --- |
+| Green breathing | Battery level ≥ 50% |
+| Yellow breathing | 20% ≤ battery level < 50% |
+| Red breathing | Battery level < 20% |
+| Slow blue breathing | The calibration required for walking has yet to be saved or has failed validation. Battery display resumes when the calibration is valid. Pending mechanical limit confirmations remain visible in the calibration workbench. |
+| Two short white flashes | Gamepad connected |
+| White on for about 1 second | Gamepad disconnected |
+| Repeating purple double flash | The robot daemon keeps reporting a fault, or the indicator service cannot read the daemon's status for a sustained period. Check the logs in **详细状态** (Detailed status). |
+| Repeating rapid red flashes | [Low-battery protection](low-battery.md) is active and actions are temporarily locked. |
+| Off | The indicator is disabled or a valid battery reading is temporarily unavailable. |
+
+When enabled, the indicator shows low-battery protection first, followed by persistent faults, gamepad connection or disconnection, pending calibration, and battery level. Once low-battery protection clears, rapid red flashes stop and the indicator shows the applicable state.
+
 ## Page navigation
 
 The top navigation opens connection setup or physical calibration. It uses the current host's setup service (port 80 by default, from `EASYDUCK_SETUP_PORT` in `/etc/easyduck/setup.env`). Ordinary navigation checks connectivity and retains the current address. After USB disconnects, it can use a previously read Wi-Fi address; without one, it shows connection guidance. Login sessions remain usable on the same host; changing IP or restarting setup requires another login. See [connection setup](connection-setup.md).

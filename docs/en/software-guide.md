@@ -113,6 +113,8 @@ Rollback does not start services or energize servos. Before reuse, check that co
 - For manual calibration service management, run `systemctl start xgoduck-calibration.service` to stop normal control; afterward stop calibration and restore normal services using the startup steps.
 - A stopped control service does not prove servo torque is off. Confirm release before handling the robot.
 
+- The web controller lets you turn the RGB indicator on or off and adjust its brightness and battery breathing speed. See the [light pattern table](web-control.md#rgb-status-indicator).
+
 ## Physical checks
 
 Check serial feedback, joint directions/limits, IMU direction, supported torque-on, standing, and each action in order. Compilation, mock tests, and model-structure checks cannot establish correct physical motion.
