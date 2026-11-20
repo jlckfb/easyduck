@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""XGO web controls over the existing robotd IPC. Never opens a hardware bus."""
+"""XGO web controls over robotd IPC with optional USB camera preview."""
 from __future__ import annotations
 
 import argparse
@@ -22,6 +22,11 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit, parse_qs
+
+try:
+    from .usb_camera import capture_frames
+except ImportError:
+    from usb_camera import capture_frames
 
 IDS = [20, 21, 22, 23, 24, 30, 31, 32, 33, 34, 10, 11, 12, 13, 14]
 HEAD_KEYS = ('neck_pitch', 'head_pitch', 'head_yaw', 'head_roll')
@@ -515,6 +520,8 @@ def background(gateway, path, stop):
 
 
 def make_handler(gateway):
+    camera_lock = threading.Lock()
+
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, fmt, *args):
             # Frequent status requests are not user actions; omit body/headers from logs.
@@ -542,9 +549,12 @@ def make_handler(gateway):
                     return self.control_connection()
                 except (ValueError, ApiError) as exc:
                     return self.reply({'detail':str(exc)}, status=getattr(exc,'status',400))
+            if route == '/api/camera/stream':
+                return self.camera_stream()
             if route == '/api/status':
                 return self.reply(gateway.status(self.headers.get('X-Control-Id', '')))
             file = {'/': ('index.html', 'text/html; charset=utf-8'),
+                    '/camera.js': ('camera.js', 'text/javascript; charset=utf-8'),
                     '/app.js': ('app.js', 'text/javascript; charset=utf-8'),
                     '/i18n.js': ('i18n.js', 'text/javascript; charset=utf-8'),
                     '/style.css': ('style.css', 'text/css; charset=utf-8')}.get(route)
@@ -554,6 +564,37 @@ def make_handler(gateway):
                     data=data.replace(b'__SETUP_PORT__',str(int(os.environ.get('EASYDUCK_SETUP_PORT','80'))).encode())
                 return self.reply(data, mime=file[1])
             self.reply({'detail': '不存在'}, 404)
+
+        def camera_stream(self):
+            if self.headers.get('Sec-Fetch-Site') in ('cross-site', 'same-site'):
+                return self.reply({'detail': 'Open the camera from the control page'}, 403)
+            if not camera_lock.acquire(blocking=False):
+                return self.reply({'detail': 'Camera is in use'}, 503)
+            started = False
+            try:
+                with capture_frames() as frames:
+                    frame = next(frames)
+                    self.connection.settimeout(2)
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'multipart/x-mixed-replace; boundary=frame')
+                    self.send_header('Cache-Control', 'no-store')
+                    self.send_header('Cross-Origin-Resource-Policy', 'same-origin')
+                    self.end_headers()
+                    started = True
+                    while True:
+                        self.wfile.write(
+                            f'--frame\r\nContent-Type: image/jpeg\r\nContent-Length: {len(frame)}\r\n\r\n'.encode()
+                            + frame + b'\r\n'
+                        )
+                        frame = next(frames)
+            except (OSError, StopIteration):
+                if not started:
+                    try:
+                        self.reply({'detail': 'USB camera unavailable'}, 503)
+                    except OSError:
+                        pass
+            finally:
+                camera_lock.release()
 
         def control_connection(self):
             """A native ping/pong lease; no JavaScript timer or motion messages required."""

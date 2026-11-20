@@ -135,3 +135,9 @@ nav .language-picker button{font:inherit;font-size:12px;padding:7px 9px;border:0
 nav .language-picker button+button{border-left:1px solid var(--line)}
 nav .language-picker button[aria-pressed=true]{background:var(--panel);color:var(--accent)}
 nav .language-picker button:focus-visible{outline:2px solid var(--accent);outline-offset:-3px}
+
+.camera-panel{margin:0 0 16px;padding:14px 18px}
+.camera-top{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.camera-panel p{margin:8px 0 0;color:var(--muted)}
+.camera-panel p:empty{display:none}
+.camera-panel img{display:block;width:100%;height:min(34vh,320px);object-fit:contain;margin:12px auto 0;border-radius:10px;background:#080c0d}

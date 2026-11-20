@@ -145,6 +145,12 @@ const controlLocale = (() => {
   "无法确认手柄连接状态：{detail}": "Could not confirm the gamepad connection: {detail}",
   "robotd通信失败：{detail}；没有自动重发动作": "Could not communicate with robotd: {detail}. The action was not retried.",
   "当前连接已断开，且没有可用的无线地址。请重新连接 USB 或从 Wi-Fi 地址打开网页。": "The connection was lost and no Wi-Fi address is available. Reconnect USB or open the page using the Wi-Fi address.",
+  "USB 摄像头": "USB camera",
+  "开启摄像头": "Turn on camera",
+  "关闭摄像头": "Turn off camera",
+  "正在连接摄像头…": "Connecting to camera…",
+  "USB 摄像头画面": "Live USB camera",
+  "摄像头不可用，请检查 USB 连接或关闭其他预览页。": "Camera unavailable. Check the USB connection or close the other preview.",
   "操作失败，请查看详细状态。": "The operation failed. Check detailed status."
 };
  const chineseErrors = {

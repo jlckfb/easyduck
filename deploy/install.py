@@ -54,7 +54,8 @@ def mapping(profile, binaries):
 
     for name in ('network_routes.py', 'navigation-client.js'):
         result.append((ROOT / 'deploy' / name, Path('opt/robot/deploy') / name))
-    result.append((ROOT / 'web/server.py', Path('opt/robot/xgoduck-web/server.py')))
+    for name in ('server.py', 'usb_camera.py'):
+        result.append((ROOT / 'web' / name, Path('opt/robot/xgoduck-web') / name))
     for name in ('first_setup.py', 'connections.py', 'navigation.py'):
         result.append((ROOT / 'deploy/setup' / name, Path('opt/robot/setup') / name))
     tree(ROOT / 'deploy/setup/static', 'opt/robot/setup/static')
