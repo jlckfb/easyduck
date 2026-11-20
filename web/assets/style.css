@@ -141,3 +141,15 @@ nav .language-picker button:focus-visible{outline:2px solid var(--accent);outlin
 .camera-panel p{margin:8px 0 0;color:var(--muted)}
 .camera-panel p:empty{display:none}
 .camera-panel img{display:block;width:100%;height:min(34vh,320px);object-fit:contain;margin:12px auto 0;border-radius:10px;background:#080c0d}
+
+.battery-led-panel{margin:16px 0;padding:16px 18px}
+.battery-led-panel h2{font-size:16px;margin:0 0 12px}
+.battery-led-controls{display:flex;align-items:center;gap:12px 20px;flex-wrap:wrap}
+.battery-led-controls input[type=range]{width:min(210px,100%);accent-color:var(--accent)}
+.battery-led-panel p{margin:8px 0;color:var(--muted)}
+.battery-led-panel p:empty{display:none}
+.battery-led-legend{display:flex;flex-wrap:wrap;gap:6px 16px;list-style:none;padding:0;margin:12px 0 0;color:var(--muted);font-size:13px}
+.led-dot{display:inline-block;width:8px;height:8px;margin-right:6px;border-radius:50%;background:var(--line)}
+.led-green{background:#58c987}.led-yellow{background:#e4bd4f}.led-red{background:#e27171}
+
+.led-blue{background:#609ef8}.led-white{background:#f4f4f4;border:1px solid #777}.led-purple{background:#bb75ed}

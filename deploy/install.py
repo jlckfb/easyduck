@@ -60,6 +60,7 @@ def mapping(profile, binaries):
         result.append((ROOT / 'deploy/setup' / name, Path('opt/robot/setup') / name))
     tree(ROOT / 'deploy/setup/static', 'opt/robot/setup/static')
     result.append((ROOT / 'deploy/network-access/network_access.py', Path('opt/robot/network-access/network_access.py')))
+    result.append((ROOT / 'deploy/battery-led/battery_led.py', Path('opt/robot/battery-led/battery_led.py')))
     result.append((ROOT / 'deploy/network-access/avahi-daemon.conf', Path('etc/avahi/easyduck.conf')))
     tree(ROOT / 'web/assets', 'opt/robot/xgoduck-web/assets')
     for name in ('server.py', 'hardware.py', 'imu_settings.py', 'calibration_math.py', 'motion.py', 'servo_setup.py', 'requirements.lock'):

@@ -419,6 +419,19 @@ impl Intents {
         self.shutdown.swap(false, Ordering::Relaxed)
     }
 
+    pub fn clear_motion_after_low_battery(&self) {
+        self.set_enabled(false);
+        self.set_xgo_command(XgoCommand::default());
+        self.set_twist([0.0; 3]);
+        self.set_head([0.0; 4]);
+        self.set_pose(PoseIntent::default());
+        self.set_mouth(0.0);
+        self.skills.store(0, Ordering::Relaxed);
+        self.mode_switch.store(MODE_NONE, Ordering::Relaxed);
+        self.shutdown.store(false, Ordering::Relaxed);
+        let _ = self.power.compare_exchange(POWER_INIT, POWER_NONE, Ordering::Relaxed, Ordering::Relaxed);
+    }
+
     pub fn set_enabled(&self, on: bool) {
         self.enabled.store(on, Ordering::Relaxed);
     }

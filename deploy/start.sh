@@ -10,12 +10,12 @@ case "${1:---preview}" in
         printf '%s\n' \
             'systemd-sysusers /usr/lib/sysusers.d/robot.conf /usr/lib/sysusers.d/padd.conf' \
             'systemctl daemon-reload' \
-            'systemctl start robotd.service padd.service xgoduck-web.service'
+            'systemctl start robotd.service padd.service xgoduck-web.service easyduck-battery-led.service'
         ;;
     --execute)
         systemd-sysusers /usr/lib/sysusers.d/robot.conf /usr/lib/sysusers.d/padd.conf
         systemctl daemon-reload
-        systemctl start robotd.service padd.service xgoduck-web.service
+        systemctl start robotd.service padd.service xgoduck-web.service easyduck-battery-led.service
         ;;
     --help|-h) usage ;;
     *) usage >&2; exit 2 ;;

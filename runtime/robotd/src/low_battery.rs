@@ -1,4 +1,4 @@
-//! Low battery is latched until robotd restarts; voltage rebound must not stand it up.
+//! Low battery remains latched until stable recovery is observed after torque release.
 
 use std::time::{Duration, Instant};
 
@@ -10,6 +10,7 @@ pub struct LowBattery {
     locked: bool,
     released: bool,
     reason: &'static str,
+    recovery_window: Option<(Instant, Instant)>,
 }
 
 impl LowBattery {
@@ -34,6 +35,26 @@ impl LowBattery {
             let since = *self.settled.get_or_insert(now);
             if now.duration_since(since) >= Duration::from_millis(500) { self.locked = true; self.reason = "sit settled"; }
         } else { self.settled = None; }
+    }
+
+    /// Observe each fresh bus voltage sample, including failures. Round to millivolts
+    /// so a nominal 6.6 V is still excluded after floating-point averaging.
+    pub fn recover(&mut self, now: Instant, volts: Option<f64>) -> Option<f64> {
+        let valid = volts.filter(|v| v.is_finite() && (v * 1000.0).round() > 6600.0);
+        let Some(volts) = valid.filter(|_| self.active && self.locked && self.released) else {
+            self.recovery_window = None;
+            return None;
+        };
+        let since = match self.recovery_window {
+            Some((since, last)) if now.duration_since(last) <= Duration::from_secs(2) => since,
+            _ => now,
+        };
+        if now.duration_since(since) >= Duration::from_secs(3) {
+            *self = Self::default();
+            return Some(volts);
+        }
+        self.recovery_window = Some((since, now));
+        None
     }
 
     /// True only on the first valid low reading, for the one-shot warning.

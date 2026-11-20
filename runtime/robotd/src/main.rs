@@ -2321,7 +2321,7 @@ async fn control_loop<T: RobotIo>(
                     match safety.set_torque(false) {
                         Ok(()) => {
                             low_battery.released();
-                            tracing::warn!(reason=low_battery.reason(), "low battery: torque off; controls locked until robotd restart");
+                            tracing::warn!(reason=low_battery.reason(), "low battery: torque off; awaiting stable voltage recovery");
                         }
                         Err(error) => tracing::error!(%error, "low battery: torque-off unconfirmed; retrying"),
                     }
@@ -2403,7 +2403,16 @@ async fn control_loop<T: RobotIo>(
             window_start = Instant::now();
             window_ticks = 0;
 
-            publish_slow_sensors(&mut safety, &state);
+            let measured_voltage = publish_slow_sensors(&mut safety, &state);
+            if let Some(volts) = low_battery.recover(Instant::now(), measured_voltage) {
+                // Serialize with IPC so any pre-protection intent is cleared before requests
+                // can be accepted again. Bringup stays Limp after the confirmed torque release.
+                let _manager = intents.control.lock().expect("control lock");
+                intents.clear_motion_after_low_battery();
+                state.battery_v.store(volts.to_bits(), Ordering::Relaxed);
+                state.low_battery_latched.store(false, Ordering::Release);
+                tracing::info!(volts, "low battery: voltage recovered; torque stays off until a new command");
+            }
 
             if last_summary.elapsed() >= LOOP_SUMMARY_INTERVAL {
                 tracing::info!(
@@ -2534,7 +2543,7 @@ fn limit_name(limit: duck_control::safety::Limit) -> &'static str {
 /// the bus: a transaction issued from the IPC side would interleave bytes with a tick and
 /// corrupt both. The IMU counters come from the same `io`, so they are mirrored here rather
 /// than reached for from the socket.
-fn publish_slow_sensors<T: RobotIo>(io: &mut Safety<T>, state: &RobotState) {
+fn publish_slow_sensors<T: RobotIo>(io: &mut Safety<T>, state: &RobotState) -> Option<f64> {
     let stale = io.imu_stale();
     state.imu_stale_blocks.store(stale.total, Ordering::Relaxed);
     state.imu_stale_run.store(stale.run, Ordering::Relaxed);
@@ -2574,11 +2583,15 @@ fn publish_slow_sensors<T: RobotIo>(io: &mut Safety<T>, state: &RobotState) {
                 .motor_mean_c
                 .store(mean_c.to_bits(), Ordering::Relaxed);
             state.motor_hottest.store(hottest as u32, Ordering::Relaxed);
+            Some(slow.volts)
         }
         // Keep the last sample. A single failed transaction is ordinary on a serial bus, and
         // dropping to "unknown" over one would make the reported battery flicker. A bus that
         // is really gone already shows up in the verdict and in `bus.consecutive_errors`.
-        Err(e) => tracing::debug!(error = %e, "slow-sensor read failed; keeping the last sample"),
+        Err(e) => {
+            tracing::debug!(error = %e, "slow-sensor read failed; keeping the last sample");
+            None
+        }
     }
 }
 
@@ -2871,7 +2884,7 @@ fn apply_controlled(state:&RobotState,intents:&Intents,id:Option<proto::Id>,call
     let emergency=matches!(call,proto::Call::RobotRelax);
     if state.low_battery_latched.load(Ordering::Acquire) && !readonly && !emergency {
         return id.map(|id|proto::Response::ok(Some(id),&proto::IntentResult {
-            accepted:false, reason:Some("low battery: controls locked until robotd restart".into()) }));
+            accepted:false, reason:Some("low battery: controls locked until stable voltage recovery".into()) }));
     }
     if managed && source.is_some() && !readonly && !emergency && !manager.allows(source.unwrap(),token) {
         return id.map(|id|proto::Response::ok(Some(id),&proto::IntentResult {accepted:false,reason:Some("inactive control input or waiting for neutral".into())}));
@@ -2946,7 +2959,7 @@ fn dispatch(
         && !matches!(call, proto::Call::RobotHealth | proto::Call::RobotSubscribe(_)
             | proto::Call::RobotMode | proto::Call::RobotModelApi | proto::Call::RobotRelax) {
         return proto::Response::ok(Some(id), &proto::IntentResult {
-            accepted:false, reason:Some("low battery: controls locked until robotd restart".into()) });
+            accepted:false, reason:Some("low battery: controls locked until stable voltage recovery".into()) });
     }
     match call {
         proto::Call::RobotMove(_)

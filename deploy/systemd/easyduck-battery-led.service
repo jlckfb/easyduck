@@ -1,0 +1,15 @@
+[Unit]
+Description=EasyDuck status indicator on WS2812B
+After=robotd.service
+ConditionPathExists=/dev/spidev3.0
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /opt/robot/battery-led/battery_led.py
+Restart=on-failure
+RestartSec=3
+RuntimeDirectory=easyduck-battery-led
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=multi-user.target

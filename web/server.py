@@ -18,6 +18,7 @@ from deploy.network_routes import addresses as network_addresses, client_script 
 import signal
 import socket
 import subprocess
+import tempfile
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -31,6 +32,38 @@ except ImportError:
 IDS = [20, 21, 22, 23, 24, 30, 31, 32, 33, 34, 10, 11, 12, 13, 14]
 HEAD_KEYS = ('neck_pitch', 'head_pitch', 'head_yaw', 'head_roll')
 ASSETS = Path(__file__).resolve().parent / 'assets'
+LED_SETTINGS = Path('/var/lib/easyduck/battery-led/settings.json')
+LED_SERVICE = Path('/etc/systemd/system/easyduck-battery-led.service')
+LED_STATUS = Path('/run/easyduck-battery-led/status.json')
+
+
+def load_led_settings():
+    try:
+        settings = json.loads(LED_SETTINGS.read_text())
+    except (OSError, ValueError):
+        settings = {}
+    if not isinstance(settings, dict):
+        settings = {}
+    brightness = settings.get('brightness', 70)
+    if type(brightness) is not int or not 1 <= brightness <= 100:
+        brightness = 70
+    speed = settings.get('speed', 5)
+    if type(speed) is not int or not 1 <= speed <= 5:
+        speed = 5
+    return {'enabled': settings.get('enabled') is not False, 'brightness': brightness, 'speed': speed}
+
+
+def save_led_settings(settings):
+    LED_SETTINGS.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(mode='w', dir=LED_SETTINGS.parent, delete=False) as stream:
+        path = Path(stream.name)
+        try:
+            json.dump(settings, stream)
+            stream.flush()
+            os.fsync(stream.fileno())
+            os.replace(path, LED_SETTINGS)
+        finally:
+            path.unlink(missing_ok=True)
 
 
 class ApiError(Exception):
@@ -549,11 +582,22 @@ def make_handler(gateway):
                     return self.control_connection()
                 except (ValueError, ApiError) as exc:
                     return self.reply({'detail':str(exc)}, status=getattr(exc,'status',400))
+            if route == '/api/battery-led':
+                try:
+                    state = json.loads(LED_STATUS.read_text()).get('state')
+                except (OSError, ValueError, AttributeError):
+                    state = None
+                return self.reply({
+                    **load_led_settings(),
+                    'available': LED_SERVICE.is_file() and Path('/dev/spidev3.0').exists(),
+                    'state': state,
+                })
             if route == '/api/camera/stream':
                 return self.camera_stream()
             if route == '/api/status':
                 return self.reply(gateway.status(self.headers.get('X-Control-Id', '')))
             file = {'/': ('index.html', 'text/html; charset=utf-8'),
+                    '/battery-led.js': ('battery-led.js', 'text/javascript; charset=utf-8'),
                     '/camera.js': ('camera.js', 'text/javascript; charset=utf-8'),
                     '/app.js': ('app.js', 'text/javascript; charset=utf-8'),
                     '/i18n.js': ('i18n.js', 'text/javascript; charset=utf-8'),
@@ -656,7 +700,38 @@ def make_handler(gateway):
             finally:
                 gateway.close_connection(client,token)
 
+        def write_battery_led(self):
+            if self.headers.get_content_type() != 'application/json':
+                return self.reply({'detail': 'Expected JSON'}, 415)
+            try:
+                origin = urlsplit(self.headers.get('Origin', ''))
+                if (origin.scheme not in ('http', 'https') or origin.netloc != self.headers.get('Host')
+                        or self.headers.get('Sec-Fetch-Site') in ('cross-site', 'same-site')):
+                    return self.reply({'detail': 'Same-origin request required'}, 403)
+                size = int(self.headers.get('Content-Length', '0'))
+                if not 0 < size <= 1024:
+                    return self.reply({'detail': 'Invalid request size'}, 400)
+                body = json.loads(self.rfile.read(size))
+                if (not isinstance(body, dict)
+                        or set(body) not in ({'enabled', 'brightness'}, {'enabled', 'brightness', 'speed'})
+                        or type(body['enabled']) is not bool or type(body['brightness']) is not int
+                        or not 1 <= body['brightness'] <= 100
+                        or ('speed' in body and (type(body['speed']) is not int or not 1 <= body['speed'] <= 5))):
+                    return self.reply({'detail': 'Invalid LED settings'}, 400)
+                if 'speed' not in body:
+                    body['speed'] = load_led_settings()['speed']
+                if not LED_SERVICE.is_file() or not Path('/dev/spidev3.0').exists():
+                    return self.reply({'detail': 'Battery indicator unavailable'}, 503)
+                save_led_settings(body)
+            except ValueError:
+                return self.reply({'detail': 'Invalid LED settings'}, 400)
+            except OSError:
+                return self.reply({'detail': 'Could not save LED settings'}, 500)
+            return self.reply(body)
+
         def do_POST(self):
+            if urlsplit(self.path).path == '/api/battery-led':
+                return self.write_battery_led()
             try:
                 origin = self.headers.get('Origin')
                 if origin and (urlsplit(origin).netloc != self.headers.get('Host') or
