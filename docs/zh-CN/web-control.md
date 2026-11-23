@@ -23,6 +23,28 @@ node tests/controls.test.cjs
 
 测试使用模拟 RPC。安装与启动步骤见[软件使用说明](software-guide.md)。
 
+## Android App 遥控和对讲
+
+1. 让标定完成的 EasyDuck 连 Wi-Fi，听它播报自己的 IP。手机连接同一个 Wi-Fi。
+2. 打开 EasyDuck Android App，在“连接地址”输入 **鸭子播报的 IP**，按原来的方式接管遥控。App 会记住这个地址。鸭子换网或重新分配了 IP，就按最新播报修改。
+3. 带麦克风的扩展板可点击“开启对讲”。首次使用时允许手机录音。按住说话，松开听鸭子周围的声音，App 请求使用手机大喇叭播放。
+
+遥控和对讲在局域网内运行，Wi-Fi 可以没有互联网。对讲只使用鸭子的 IP，不用扫码或输入配对码。能够连接鸭子的局域网设备都能发起对讲，每次只允许一个对讲会话。
+
+自己构建板端时，从仓库根目录在板端安装一次 [Android 对讲依赖](../../web/requirements-intercom.txt)，再按[软件使用说明](software-guide.md)安装和启动服务。板端需要可用的 Python pip。
+
+```sh
+sudo python3 -m pip install --target /opt/robot/xgoduck-web/intercom-deps -r web/requirements-intercom.txt
+```
+
+自己构建 APK 时，在安装 Android SDK 33 和 Gradle 8.7 的电脑上从仓库根目录执行：
+
+```sh
+gradle -p android :app:assembleDebug
+```
+
+输出为 `android/app/build/outputs/apk/debug/app-debug.apk`。同一份 APK 可以连接运行了 Android 对讲服务的不同鸭子。
+
 ## RGB 状态指示灯
 
 遥控页的“状态指示灯”区域可开关 WS2812B 灯、调节亮度和电量呼吸速度，也能查看当前灯效。默认开启，亮度为 70%，电量呼吸速度为最快（5 档）。速度设置只用于绿、黄、红三种电量呼吸灯。

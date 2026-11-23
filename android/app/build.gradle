@@ -1,0 +1,25 @@
+plugins { id 'com.android.application' }
+
+def outputRoot = providers.gradleProperty('easyduckBuildDir').getOrNull()
+if (outputRoot) layout.buildDirectory.set(file(outputRoot))
+
+android {
+    namespace 'com.lckfb.easyduck'
+    compileSdk 33
+
+    defaultConfig {
+        applicationId 'com.lckfb.easyduck'
+        minSdk 26
+        targetSdk 33
+        versionCode 1
+        versionName '0.1.0'
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+}

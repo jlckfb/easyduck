@@ -1,0 +1,9 @@
+<resources>
+    <style name="EasyDuckTheme" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">#111718</item>
+        <item name="android:statusBarColor">#111718</item>
+        <item name="android:navigationBarColor">#111718</item>
+        <item name="android:colorAccent">#D8F88B</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+</resources>

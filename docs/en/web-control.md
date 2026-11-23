@@ -23,6 +23,28 @@ node tests/controls.test.cjs
 
 Tests use mock RPC. See the [software guide](software-guide.md) for installation/startup.
 
+## Android app control and intercom
+
+1. Connect the calibrated EasyDuck to Wi-Fi and listen for its spoken IP. Connect the phone to the same Wi-Fi.
+2. Open the EasyDuck Android app and enter **the duck's spoken IP** under **连接地址** (Connection address). Take control as usual. The app remembers the address. If the duck changes networks or receives a new IP, enter the latest address it announces.
+3. With a microphone on the expansion board, tap **开启对讲** (Start intercom). Allow microphone access on first use. Hold to talk and release to hear the duck's surroundings. The app requests playback through the phone's loudspeaker.
+
+Control and voice stay on the local network. The Wi-Fi works without internet access. Intercom uses the duck's IP. No QR scan or pairing code is required. Devices that can reach the duck on the LAN can start intercom, with one active voice session at a time.
+
+For a source-built board, install the [Android intercom dependencies](../../web/requirements-intercom.txt) once from the repository root on the board, then follow the [software guide](software-guide.md) to install and start the services. Python pip must be available on the board.
+
+```sh
+sudo python3 -m pip install --target /opt/robot/xgoduck-web/intercom-deps -r web/requirements-intercom.txt
+```
+
+To build the APK, run the following from the repository root on a computer with Android SDK 33 and Gradle 8.7:
+
+```sh
+gradle -p android :app:assembleDebug
+```
+
+The output is `android/app/build/outputs/apk/debug/app-debug.apk`. The same APK can connect to different ducks running the Android intercom service.
+
 ## RGB status indicator
 
 Use the **状态指示灯** (Status indicator) section to turn the WS2812B light on or off, adjust brightness and battery breathing speed, and see the current pattern. The light defaults to on, at 70% brightness and the fastest battery breathing speed (level 5). The speed setting applies only to the green, yellow, and red battery breathing patterns.
