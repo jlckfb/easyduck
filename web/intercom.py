@@ -1,5 +1,6 @@
 """One authenticated, half-duplex PCM stream for the local web controller."""
 import hmac
+import math
 import os
 import secrets
 import select
@@ -12,6 +13,10 @@ PCM = ('-t', 'raw', '-f', 'S16_LE', '-r', '16000', '-c', '1',
 PACKET = 1920  # 60 ms, signed 16-bit little-endian mono.
 CAPTURE = 'plughw:CARD=rockchiprk809co,DEV=0'
 MIC_BOOST = 'MIC Boost Gain'
+SPEAKER_VOLUME = 'DAC Playback Volume'
+SPEAKER_DEFAULT = 252
+SPEAKER_STEP = 5
+DAC_DB_PER_STEP = (95.00 - 1.12) / 255
 
 
 class IntercomError(Exception):
@@ -26,6 +31,7 @@ class Intercom:
         self.mic_boost = mic_boost
         self.session_timeout = session_timeout
         self.lock = threading.Lock()
+        self.speaker_lock = threading.Lock()
         self.token = None
         self.stream_token = None
         self.expires = 0
@@ -54,6 +60,23 @@ class Intercom:
         current = self._mixer('cget', name).rsplit(': values=', 1)[-1].split()[0]
         self.mixer_values[name] = current
         self._mixer('cset', name, value)
+
+    def speaker_volume(self, percent=None):
+        with self.speaker_lock:
+            try:
+                if percent is not None:
+                    raw = (0 if percent == 0 else
+                           SPEAKER_DEFAULT + round(20 * math.log10(percent / 100) / DAC_DB_PER_STEP))
+                    self._mixer('cset', SPEAKER_VOLUME, f'{raw},{raw}')
+                    return percent
+                result = self._mixer('cget', SPEAKER_VOLUME)
+                raw = int(result.rsplit(': values=', 1)[1].split(',')[0])
+                if raw == 0:
+                    return 0
+                percent = 100 * 10 ** ((raw - SPEAKER_DEFAULT) * DAC_DB_PER_STEP / 20)
+                return min(100, max(SPEAKER_STEP, round(percent / SPEAKER_STEP) * SPEAKER_STEP))
+            except (ValueError, IndexError, OSError, subprocess.SubprocessError) as error:
+                raise IntercomError(503, 'intercom_audio_failed') from error
 
     def _stop_process(self, drain=False):
         process, self.process = self.process, None
@@ -93,7 +116,10 @@ class Intercom:
         with self.lock:
             self._reset()
 
-    def open(self, username=None, password=None):
+    def open(self, username=None, password=None, *, mic_boost=None):
+        gain = self.mic_boost if mic_boost is None else mic_boost
+        if type(gain) is not int or not 0 <= gain <= 3:
+            raise IntercomError(400, 'intercom_invalid_mic_boost')
         with self.lock:
             now = time.monotonic()
             if now < self.next_login:
@@ -107,13 +133,26 @@ class Intercom:
             self._reset()
             try:
                 self._set_mixer('Capture MIC Path', 'Main Mic')
-                self._set_mixer(MIC_BOOST, f'{self.mic_boost},{self.mic_boost}')
+                self._set_mixer(MIC_BOOST, f'{gain},{gain}')
             except (OSError, subprocess.SubprocessError, IndexError):
                 self._reset()
                 raise IntercomError(503, 'intercom_audio_failed')
             self.token = secrets.token_hex(24)
             self.expires = time.monotonic() + 4
             return self.token
+
+    def set_mic_boost(self, token, gain):
+        if type(gain) is not int or not 0 <= gain <= 3:
+            raise IntercomError(400, 'intercom_invalid_mic_boost')
+        with self.lock:
+            if (not self.token or self.stream_token != token or time.monotonic() >= self.expires
+                    or not hmac.compare_digest(self.token, token)):
+                raise IntercomError(401, 'intercom_closed')
+            # Keep the original mixer value saved by open() for session cleanup.
+            try:
+                self._mixer('cset', MIC_BOOST, f'{gain},{gain}')
+            except (OSError, subprocess.SubprocessError) as error:
+                raise IntercomError(503, 'intercom_audio_failed') from error
 
     def _switch(self, mode):
         if self.mode == mode and self.process.poll() is None:

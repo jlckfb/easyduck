@@ -37,15 +37,19 @@ import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.PopupMenu;
+import android.widget.SeekBar;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import java.io.ByteArrayInputStream;
 import java.net.Inet4Address;
 
+import okhttp3.Call;
 import org.json.JSONArray;
 import org.json.JSONException;
 
 public final class MainActivity extends Activity {
+    private static final int SPEAKER_VOLUME_STEP = 5;
     private static final int MICROPHONE_PERMISSION = 10;
     private static final int[] VOICE_RETRY_MS = {1000, 2000, 4000, 6000, 8000};
     private static final String RELEASE_CONTROL = "window.dispatchEvent(new Event('blur'));"
@@ -65,6 +69,9 @@ public final class MainActivity extends Activity {
     private TextView routeStatus;
     private Button voiceButton;
     private Button talkButton;
+    private Button audioSettingsButton;
+    private int micBoost;
+    private Call speakerVolumeCall;
     private Button orientationButton;
     private Button addressButton;
     private Button landscapeSettings;
@@ -89,6 +96,7 @@ public final class MainActivity extends Activity {
         super.onCreate(state);
         language = getPreferences(MODE_PRIVATE).getString("ui-language", null);
         theme = getPreferences(MODE_PRIVATE).getString("ui-theme", null);
+        micBoost = Math.max(0, Math.min(3, getPreferences(MODE_PRIVATE).getInt("mic-boost", 3)));
         buildLayout();
         applyAppearance();
         host = getPreferences(MODE_PRIVATE).getString("host", "");
@@ -139,7 +147,7 @@ public final class MainActivity extends Activity {
         getWindow().getDecorView().setSystemUiVisibility(light()
                 ? View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR | View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR : 0);
         for (TextView view : new TextView[]{title, addressLabel, voiceStatus, routeStatus,
-                addressButton, orientationButton, landscapeSettings, voiceButton, talkButton}) {
+                addressButton, orientationButton, landscapeSettings, voiceButton, audioSettingsButton, talkButton}) {
             view.setText(tr((String) view.getTag()));
             view.setShadowLayer(light() ? 0 : dp(2), 0, dp(1), Color.BLACK);
         }
@@ -148,7 +156,7 @@ public final class MainActivity extends Activity {
         voiceStatus.setTextColor(textColor);
         routeStatus.setTextColor(accent);
         for (Button button : new Button[]{addressButton, orientationButton,
-                landscapeSettings, voiceButton}) {
+                landscapeSettings, voiceButton, audioSettingsButton}) {
             button.setTextColor(textColor);
             styleButton(button, false);
         }
@@ -352,6 +360,9 @@ public final class MainActivity extends Activity {
             return true;
         });
         actions.addView(talkButton, new LinearLayout.LayoutParams(0, -2, 1));
+        audioSettingsButton = button("音频");
+        audioSettingsButton.setOnClickListener(this::showAudioSettings);
+        actions.addView(audioSettingsButton);
         footer.addView(actions);
         layout.addView(footer);
         content.addView(layout, new FrameLayout.LayoutParams(-1, -1));
@@ -381,6 +392,125 @@ public final class MainActivity extends Activity {
         voiceActions.setLayoutParams(new LinearLayout.LayoutParams(landscape ? 0 : -1, -2,
                 landscape ? 1.5f : 0));
         updateViewport();
+    }
+
+    private void showAudioSettings(View anchor) {
+        PopupMenu options = new PopupMenu(themedContext(), anchor);
+        options.getMenu().add(tr("鸭子收音")).setOnMenuItemClickListener(item -> {
+            showMicBoost();
+            return true;
+        });
+        options.getMenu().add(tr("鸭子喇叭音量")).setOnMenuItemClickListener(item -> {
+            showSpeakerVolume();
+            return true;
+        });
+        options.show();
+    }
+
+    private void showSpeakerVolume() {
+        if (!isLocalIp(host)) {
+            showAddressDialog();
+            return;
+        }
+        if (speakerVolumeCall != null) return;
+        bindLocalWifi();
+        String address = host;
+        speakerVolumeCall = VoiceConnection.speakerVolume(address, null, current -> runOnUiThread(() -> {
+            speakerVolumeCall = null;
+            if (!foreground || isDestroyed() || !address.equals(host)) return;
+            if (current < 0) {
+                Toast.makeText(this, tr("无法读取鸭子喇叭音量，请检查连接和板端版本"), Toast.LENGTH_LONG).show();
+                return;
+            }
+            ContextThemeWrapper context = themedContext();
+            LinearLayout content = new LinearLayout(context);
+            content.setOrientation(LinearLayout.VERTICAL);
+            content.setPadding(dp(24), dp(12), dp(24), 0);
+            TextView explanation = new TextView(context);
+            explanation.setText(tr("同时调整鸭子的对讲和提示音音量。"));
+            content.addView(explanation);
+            TextView value = new TextView(context);
+            value.setTextSize(20);
+            value.setText(current + "%");
+            content.addView(value);
+            SeekBar slider = new SeekBar(context);
+            slider.setContentDescription(tr("鸭子喇叭音量"));
+            slider.setMax(100 / SPEAKER_VOLUME_STEP);
+            slider.setProgress(current / SPEAKER_VOLUME_STEP);
+            slider.setMinimumHeight(dp(48));
+            slider.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+                @Override public void onProgressChanged(SeekBar bar, int progress, boolean user) {
+                    value.setText(progress * SPEAKER_VOLUME_STEP + "%");
+                }
+
+                @Override public void onStartTrackingTouch(SeekBar bar) {}
+                @Override public void onStopTrackingTouch(SeekBar bar) {}
+            });
+            content.addView(slider, new LinearLayout.LayoutParams(-1, -2));
+            new AlertDialog.Builder(context).setTitle(tr("鸭子喇叭音量")).setView(content)
+                    .setNegativeButton(tr("取消"), null)
+                    .setPositiveButton(tr("应用"), (dialog, which) -> {
+                        int selected = slider.getProgress() * SPEAKER_VOLUME_STEP;
+                        if (selected == current) return;
+                        speakerVolumeCall = VoiceConnection.speakerVolume(address, selected, applied -> runOnUiThread(() -> {
+                            speakerVolumeCall = null;
+                            if (applied < 0 && foreground && !isDestroyed()) {
+                                Toast.makeText(this, tr("鸭子未能调整喇叭音量"), Toast.LENGTH_LONG).show();
+                            }
+                        }));
+                    }).show();
+        }));
+    }
+
+    private void showMicBoost() {
+        VoiceConnection session = voice;
+        if (session != null && audio != null && !session.supportsMicBoost()) {
+            Toast.makeText(this, tr("鸭子端需要更新后才能调硬件增益"), Toast.LENGTH_LONG).show();
+            return;
+        }
+        ContextThemeWrapper context = themedContext();
+        LinearLayout content = new LinearLayout(context);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(dp(24), dp(12), dp(24), 0);
+
+        TextView explanation = new TextView(context);
+        explanation.setText(tr("调节鸭子麦克风的硬件增益。档位越高，环境声和底噪都会变响。"));
+        content.addView(explanation);
+        TextView value = new TextView(context);
+        value.setPadding(0, dp(12), 0, 0);
+        value.setTextSize(20);
+        value.setText((audio != null && session != null ? session.appliedMicBoost() : micBoost) * 10 + " dB");
+        content.addView(value);
+
+        SeekBar slider = new SeekBar(context);
+        slider.setContentDescription(tr("鸭子收音强度"));
+        slider.setMax(3);
+        slider.setProgress(audio != null && session != null ? session.appliedMicBoost() : micBoost);
+        slider.setKeyProgressIncrement(1);
+        slider.setMinimumHeight(dp(48));
+        content.addView(slider, new LinearLayout.LayoutParams(-1, -2));
+        slider.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override public void onProgressChanged(SeekBar bar, int position, boolean fromUser) {
+                if (!fromUser) return;
+                value.setText(position * 10 + " dB");
+                VoiceConnection current = voice;
+                if (audio != null && (current == null || !current.setMicBoost(position))) {
+                    showMicBoostFailure();
+                    return;
+                }
+                micBoost = position;
+                getPreferences(MODE_PRIVATE).edit().putInt("mic-boost", micBoost).apply();
+            }
+
+            @Override public void onStartTrackingTouch(SeekBar bar) {}
+            @Override public void onStopTrackingTouch(SeekBar bar) {}
+        });
+        new AlertDialog.Builder(context).setTitle(tr("鸭子收音"))
+                .setView(content).setPositiveButton(tr("完成"), null).show();
+    }
+
+    private void showMicBoostFailure() {
+        Toast.makeText(this, tr("鸭子未能切换麦克风增益"), Toast.LENGTH_SHORT).show();
     }
 
     private void showLandscapeSettings(View anchor) {
@@ -596,6 +726,11 @@ public final class MainActivity extends Activity {
         label(voiceButton, "取消");
         try {
             VoiceConnection.Listener listener = new VoiceConnection.Listener() {
+                @Override public void micBoostFailed() {
+                    runOnUiThread(() -> {
+                        if (this == voiceListener) showMicBoostFailure();
+                    });
+                }
                 @Override public void ready() {
                     runOnUiThread(() -> onVoiceReady(this));
                 }
@@ -610,7 +745,7 @@ public final class MainActivity extends Activity {
                     });
                 }
             };
-            voice = new VoiceConnection(address, listener);
+            voice = new VoiceConnection(address, micBoost, listener);
             voiceListener = listener;
             voice.open();
         } catch (Exception error) {
@@ -658,6 +793,7 @@ public final class MainActivity extends Activity {
                     });
                 }
             });
+            if (voice.supportsMicBoost() && voice.appliedMicBoost() != micBoost) voice.setMicBoost(micBoost);
             setVolumeControlStream(AudioManager.STREAM_VOICE_CALL);
             label(voiceStatus, "正在收听鸭子周围的声音");
             voiceWasReady = true;
@@ -741,6 +877,7 @@ public final class MainActivity extends Activity {
     }
 
     @Override protected void onDestroy() {
+        if (speakerVolumeCall != null) speakerVolumeCall.cancel();
         getSystemService(ConnectivityManager.class).bindProcessToNetwork(null);
         web.destroy();
         super.onDestroy();

@@ -21,6 +21,20 @@ final class AppUiText {
             case "亮色" -> "Light theme";
             case "暗色" -> "Dark theme";
             case "对讲已关闭" -> "Intercom off";
+            case "音频" -> "Audio";
+            case "鸭子收音" -> "Duck microphone";
+            case "鸭子喇叭音量" -> "Duck speaker volume";
+            case "同时调整鸭子的对讲和提示音音量。" -> "Adjusts the duck’s intercom and sound prompts.";
+            case "无法读取鸭子喇叭音量，请检查连接和板端版本" ->
+                    "Could not read speaker volume. Check the connection and duck software version.";
+            case "鸭子未能调整喇叭音量" -> "The duck could not change its speaker volume.";
+            case "应用" -> "Apply";
+            case "鸭子收音强度" -> "Duck microphone level";
+            case "调节鸭子麦克风的硬件增益。档位越高，环境声和底噪都会变响。" ->
+                    "Set the duck’s hardware microphone gain. Higher settings amplify ambient sound and noise.";
+            case "鸭子端需要更新后才能调硬件增益" -> "Update the duck software to adjust hardware gain.";
+            case "鸭子未能切换麦克风增益" -> "The duck could not change its microphone gain.";
+            case "完成" -> "Done";
             case "开启对讲" -> "Intercom";
             case "按住说话" -> "Hold to talk";
             case "正在打开麦克风" -> "Starting microphone";

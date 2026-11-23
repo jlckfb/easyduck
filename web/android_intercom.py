@@ -7,7 +7,7 @@ import signal
 import threading
 from urllib.parse import urlsplit
 
-from intercom import Intercom, IntercomError, PACKET
+from intercom import Intercom, IntercomError, PACKET, SPEAKER_STEP
 from intercom_stream import upgrade
 
 LOCAL_NETWORKS = tuple(map(IPv4Network, ('10.0.0.0/8', '172.16.0.0/12',
@@ -38,16 +38,23 @@ def handler_for(intercom):
             route = urlsplit(self.path).path
             if route == '/health':
                 return self.reply(200, {'audio': 'pcm-s16le', 'sampleRate': 16000})
+            if route == '/api/intercom/speaker':
+                if not self.check_origin():
+                    return self.reply(403, {})
+                try:
+                    return self.reply(200, {'volume': intercom.speaker_volume()})
+                except IntercomError as exc:
+                    return self.reply(exc.status, {'detail': str(exc)})
             if route != '/api/intercom/stream':
                 return self.reply(404, {})
             if not self.check_origin():
                 return self.reply(403, {})
             return upgrade(self, intercom, PACKET, IntercomError, buffer_frames=6,
-                           io_timeout=5, drop_backlogged_audio=True)
+                           io_timeout=5, drop_backlogged_audio=True, allow_mic_boost=True)
 
         def do_POST(self):
             route = urlsplit(self.path).path
-            if route not in ('/api/intercom/open', '/api/intercom/close'):
+            if route not in ('/api/intercom/open', '/api/intercom/close', '/api/intercom/speaker'):
                 return self.reply(404, {})
             if not self.check_origin():
                 return self.reply(403, {})
@@ -60,8 +67,20 @@ def handler_for(intercom):
                 if route == '/api/intercom/close':
                     intercom.exchange(self.headers.get('X-Intercom-Token', ''), 'close', b'')
                     return self.reply(200, {})
-                token = intercom.open()
-                return self.reply(200, {'token': token})
+                if route == '/api/intercom/speaker':
+                    value = self.headers.get('X-Intercom-Speaker-Volume', '')
+                    if not value.isascii() or not value.isdecimal() or len(value) > 3:
+                        return self.reply(400, {})
+                    percent = int(value)
+                    if percent > 100 or percent % SPEAKER_STEP:
+                        return self.reply(400, {})
+                    return self.reply(200, {'volume': intercom.speaker_volume(percent)})
+                requested = self.headers.get('X-Intercom-Mic-Boost')
+                if requested is not None and requested not in ('0', '1', '2', '3'):
+                    return self.reply(400, {})
+                gain = intercom.mic_boost if requested is None else int(requested)
+                token = intercom.open(mic_boost=gain)
+                return self.reply(200, {'token': token, 'micBoost': gain})
             except IntercomError as exc:
                 return self.reply(exc.status, {'detail': str(exc)})
             except (ValueError, OSError):

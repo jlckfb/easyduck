@@ -5,6 +5,7 @@ import java.net.Proxy;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.function.IntConsumer;
 
 import okhttp3.Call;
 import okhttp3.Callback;
@@ -25,6 +26,7 @@ final class VoiceConnection implements AutoCloseable {
     interface Listener {
         void ready();
         void audio(byte[] pcm);
+        void micBoostFailed();
         void failed(String reason);
     }
 
@@ -37,16 +39,20 @@ final class VoiceConnection implements AutoCloseable {
             .build();
     private final HttpUrl base;
     private final String origin;
+    private final int initialMicBoost;
     private final Listener listener;
     private final ScheduledExecutorService timer = Executors.newSingleThreadScheduledExecutor();
     private boolean closed;
     private boolean ready;
+    private boolean micBoostSupported;
+    private int appliedMicBoost = -1;
     private WebSocket socket;
     private Call login;
     private String token;
 
-    VoiceConnection(String host, Listener listener) {
+    VoiceConnection(String host, int micBoost, Listener listener) {
         this.listener = listener;
+        this.initialMicBoost = micBoost;
         base = new HttpUrl.Builder().scheme("http").host(host).port(9460).build();
         origin = "http://" + host + ":9460";
     }
@@ -60,9 +66,34 @@ final class VoiceConnection implements AutoCloseable {
                 .header("Origin", origin);
     }
 
+    static Call speakerVolume(String host, Integer volume, IntConsumer result) {
+        HttpUrl base = new HttpUrl.Builder().scheme("http").host(host).port(9460).build();
+        Request.Builder operation = request(base, "http://" + host + ":9460", "speaker");
+        if (volume != null) operation.header("X-Intercom-Speaker-Volume", volume.toString()).post(EMPTY);
+        Call call = CLIENT.newCall(operation.build());
+        call.enqueue(new Callback() {
+            @Override public void onFailure(Call call, IOException error) {
+                result.accept(-1);
+            }
+
+            @Override public void onResponse(Call call, Response response) {
+                int level = -1;
+                try (response) {
+                    if (response.isSuccessful() && response.body() != null) {
+                        int received = new JSONObject(response.body().string()).getInt("volume");
+                        if (received >= 0 && received <= 100) level = received;
+                    }
+                } catch (IOException | org.json.JSONException ignored) {}
+                result.accept(level);
+            }
+        });
+        return call;
+    }
+
     synchronized void open() {
         if (closed || login != null) return;
-        login = CLIENT.newCall(request("open").post(EMPTY).build());
+        login = CLIENT.newCall(request("open").header("X-Intercom-Mic-Boost", Integer.toString(initialMicBoost))
+                .post(EMPTY).build());
         login.enqueue(new Callback() {
             @Override public void onFailure(Call call, IOException error) {
                 fail("无法连接鸭子的对讲服务，请检查 Wi-Fi 和鸭子的 IP");
@@ -82,7 +113,7 @@ final class VoiceConnection implements AutoCloseable {
                     JSONObject session = new JSONObject(response.body().string());
                     String received = session.getString("token");
                     if (!received.matches("[0-9a-f]{48}")) throw new IOException("Invalid voice session");
-                    connect(received);
+                    connect(received, session.optInt("micBoost", -1));
                 } catch (IOException | org.json.JSONException error) {
                     fail("鸭子的对讲响应有误");
                 }
@@ -90,12 +121,14 @@ final class VoiceConnection implements AutoCloseable {
         });
     }
 
-    private synchronized void connect(String received) {
+    private synchronized void connect(String received, int gain) {
         if (closed) {
             closeSession(received);
             return;
         }
         token = received;
+        micBoostSupported = gain >= 0 && gain <= 3;
+        appliedMicBoost = gain;
         socket = CLIENT.newWebSocket(request("stream").build(), new WebSocketListener() {
             @Override public void onOpen(WebSocket webSocket, Response response) {
                 if (!webSocket.send(received)) fail("无法开启对讲");
@@ -104,6 +137,14 @@ final class VoiceConnection implements AutoCloseable {
             @Override public void onMessage(WebSocket webSocket, String text) {
                 synchronized (VoiceConnection.this) {
                     if (closed || webSocket != socket) return;
+                    if (ready && "mic-boost-error".equals(text)) {
+                        listener.micBoostFailed();
+                        return;
+                    }
+                    if (ready && text.matches("mic-boost:[0-3]")) {
+                        appliedMicBoost = text.charAt(text.length() - 1) - '0';
+                        return;
+                    }
                     if (ready || !"ready".equals(text)) return;
                     ready = true;
                 }
@@ -138,6 +179,18 @@ final class VoiceConnection implements AutoCloseable {
 
     synchronized boolean send(String mode) {
         return !closed && ready && socket != null && socket.send(mode);
+    }
+
+    synchronized boolean supportsMicBoost() {
+        return ready && !closed && micBoostSupported;
+    }
+
+    synchronized int appliedMicBoost() {
+        return appliedMicBoost;
+    }
+
+    synchronized boolean setMicBoost(int level) {
+        return supportsMicBoost() && send("mic-boost:" + level);
     }
 
     synchronized boolean sendAudio(byte[] data, int length) {

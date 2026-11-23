@@ -13,7 +13,7 @@ GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11'
 
 
 def upgrade(handler, intercom, packet_size, intercom_error, *, buffer_frames=22,
-            io_timeout=1, drop_backlogged_audio=False):
+            io_timeout=1, drop_backlogged_audio=False, allow_mic_boost=False):
     key = handler.headers.get('Sec-WebSocket-Key', '')
     try:
         valid_key = len(base64.b64decode(key, validate=True)) == 16
@@ -35,11 +35,11 @@ def upgrade(handler, intercom, packet_size, intercom_error, *, buffer_frames=22,
     handler.end_headers()
     handler.wfile.flush()
     _stream(handler.connection, intercom, packet_size, intercom_error, buffer_frames,
-            io_timeout, drop_backlogged_audio)
+            io_timeout, drop_backlogged_audio, allow_mic_boost)
 
 
 def _stream(sock, intercom, packet_size, intercom_error, buffer_frames,
-            io_timeout, drop_backlogged_audio=False):
+            io_timeout, drop_backlogged_audio=False, allow_mic_boost=False):
     ws = Connection(ConnectionType.SERVER)
     token = None
     mode = 'listen'
@@ -129,6 +129,17 @@ def _stream(sock, intercom, packet_size, intercom_error, buffer_frames,
                             mode = data.decode('ascii')
                         if mode == 'talk' or queued_audio:
                             intercom.exchange(token, 'talk', b'')
+                    elif allow_mic_boost and isinstance(event, TextMessage) and data.startswith(b'mic-boost:'):
+                        level = data[len(b'mic-boost:'):]
+                        if level not in (b'0', b'1', b'2', b'3'):
+                            send(TextMessage(data='mic-boost-error'))
+                            continue
+                        try:
+                            intercom.set_mic_boost(token, int(level))
+                        except intercom_error:
+                            send(TextMessage(data='mic-boost-error'))
+                        else:
+                            send(TextMessage(data=data.decode('ascii')))
                     elif isinstance(event, BytesMessage) and mode == 'talk' and data and len(data) % 2 == 0:
                         if len(queued_audio) >= 36:
                             queued_audio.popleft()
