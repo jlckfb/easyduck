@@ -3,8 +3,10 @@ package com.lckfb.easyduck;
 import android.Manifest;
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
 import android.content.res.ColorStateList;
+import android.content.res.Configuration;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
@@ -19,10 +21,12 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.text.InputType;
 import android.text.TextUtils;
+import android.view.ContextThemeWrapper;
 import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.WindowManager;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
@@ -30,11 +34,16 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.FrameLayout;
 import android.widget.LinearLayout;
+import android.widget.PopupMenu;
 import android.widget.TextView;
 
 import java.io.ByteArrayInputStream;
 import java.net.Inet4Address;
+
+import org.json.JSONArray;
+import org.json.JSONException;
 
 public final class MainActivity extends Activity {
     private static final int MICROPHONE_PERMISSION = 10;
@@ -47,12 +56,23 @@ public final class MainActivity extends Activity {
     private static final int TEXT = Color.rgb(240, 243, 239);
     private static final int MUTED = Color.rgb(178, 190, 187);
 
+    private String language;
+    private String theme;
+    private TextView title;
     private WebView web;
     private TextView addressLabel;
     private TextView voiceStatus;
     private TextView routeStatus;
     private Button voiceButton;
     private Button talkButton;
+    private Button orientationButton;
+    private Button addressButton;
+    private Button landscapeSettings;
+    private LinearLayout appHeader;
+    private LinearLayout voiceFooter;
+    private boolean overlaySupported;
+    private LinearLayout voiceState;
+    private LinearLayout voiceActions;
     private volatile String host;
     private boolean controlFailed;
     private VoiceConnection voice;
@@ -67,10 +87,13 @@ public final class MainActivity extends Activity {
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
+        language = getPreferences(MODE_PRIVATE).getString("ui-language", null);
+        theme = getPreferences(MODE_PRIVATE).getString("ui-theme", null);
         buildLayout();
+        applyAppearance();
         host = getPreferences(MODE_PRIVATE).getString("host", "");
         if (!isLocalIp(host)) {
-            addressLabel.setText("尚未连接");
+            label(addressLabel, "尚未连接");
             showAddressDialog();
         }
     }
@@ -79,9 +102,80 @@ public final class MainActivity extends Activity {
         return Math.round(size * getResources().getDisplayMetrics().density);
     }
 
+    private boolean light() {
+        return "day".equals(theme);
+    }
+
+    private boolean english() {
+        return language == null ? !"zh".equals(getResources().getConfiguration().getLocales()
+                .get(0).getLanguage()) : "en".equals(language);
+    }
+
+    private String tr(String source) {
+        return english() ? AppUiText.english(source) : source;
+    }
+
+    private void label(TextView view, String source) {
+        view.setTag(source);
+        view.setText(tr(source));
+    }
+
+    private ContextThemeWrapper themedContext() {
+        return new ContextThemeWrapper(this, light() ? R.style.EasyDuckLightTheme : R.style.EasyDuckTheme);
+    }
+
+    private int surfaceColor() {
+        return light() ? 0xFFF7FAF2 : PANEL;
+    }
+
+    private void applyAppearance() {
+        int background = light() ? 0xFFEEF2E8 : INK;
+        int textColor = light() ? 0xFF202C28 : TEXT;
+        int muted = light() ? 0xFF485D51 : MUTED;
+        int accent = light() ? 0xFF375224 : ACCENT;
+        web.setBackgroundColor(background);
+        getWindow().setStatusBarColor(background);
+        getWindow().setNavigationBarColor(background);
+        getWindow().getDecorView().setSystemUiVisibility(light()
+                ? View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR | View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR : 0);
+        for (TextView view : new TextView[]{title, addressLabel, voiceStatus, routeStatus,
+                addressButton, orientationButton, landscapeSettings, voiceButton, talkButton}) {
+            view.setText(tr((String) view.getTag()));
+            view.setShadowLayer(light() ? 0 : dp(2), 0, dp(1), Color.BLACK);
+        }
+        title.setTextColor(accent);
+        addressLabel.setTextColor(muted);
+        voiceStatus.setTextColor(textColor);
+        routeStatus.setTextColor(accent);
+        for (Button button : new Button[]{addressButton, orientationButton,
+                landscapeSettings, voiceButton}) {
+            button.setTextColor(textColor);
+            styleButton(button, false);
+        }
+        talkButton.setTextColor(new ColorStateList(
+                new int[][]{{android.R.attr.state_enabled}, {}}, new int[]{accent, muted}));
+        styleButton(talkButton, true);
+        updateViewport();
+    }
+
+    private void setAppearance(String nextLanguage, String nextTheme, boolean updatePage) {
+        if (!"zh-CN".equals(nextLanguage) && !"en".equals(nextLanguage)) return;
+        if (!"day".equals(nextTheme) && !"night".equals(nextTheme)) return;
+        if (nextLanguage.equals(language) && nextTheme.equals(theme)) return;
+        language = nextLanguage;
+        theme = nextTheme;
+        getPreferences(MODE_PRIVATE).edit().putString("ui-language", language)
+                .putString("ui-theme", theme).apply();
+        applyAppearance();
+        if (updatePage) {
+            web.evaluateJavascript("if(typeof controlLocale!=='undefined')controlLocale.setLanguage('"
+                    + language + "');if(typeof setTheme==='function')setTheme('" + theme + "');", null);
+        }
+    }
+
     private TextView text(String label, int size, int color) {
         TextView view = new TextView(this);
-        view.setText(label);
+        label(view, label);
         view.setTextSize(size);
         view.setTextColor(color);
         view.setShadowLayer(dp(2), 0, dp(1), Color.BLACK);
@@ -92,7 +186,7 @@ public final class MainActivity extends Activity {
         Button value = new Button(this);
         value.setAllCaps(false);
         value.setMinHeight(dp(48));
-        value.setText(label);
+        label(value, label);
         value.setTextColor(TEXT);
         styleButton(value, false);
         return value;
@@ -101,9 +195,11 @@ public final class MainActivity extends Activity {
     private void styleButton(Button button, boolean primary) {
         GradientDrawable panel = new GradientDrawable();
         panel.setCornerRadius(dp(10));
-        panel.setColor(primary ? 0x76334522 : 0x8C202B2B);
-        panel.setStroke(dp(1), primary ? ACCENT : 0x997E9190);
-        button.setBackground(new RippleDrawable(ColorStateList.valueOf(0x44FFFFFF), panel, null));
+        panel.setColor(light() ? (primary ? 0xEDF0F6DE : 0xEDFFFFFF)
+                : (primary ? 0x76334522 : 0x8C202B2B));
+        panel.setStroke(dp(1), light() ? (primary ? 0xFF829B5E : 0xFFA7B6A7)
+                : (primary ? ACCENT : 0x997E9190));
+        button.setBackground(new RippleDrawable(ColorStateList.valueOf(light() ? 0x27375224 : 0x44FFFFFF), panel, null));
     }
 
     private void buildLayout() {
@@ -111,13 +207,13 @@ public final class MainActivity extends Activity {
         layout.setOrientation(LinearLayout.VERTICAL);
         layout.setBackgroundColor(INK);
 
-        LinearLayout header = new LinearLayout(this);
+        LinearLayout header = appHeader = new LinearLayout(this);
         header.setPadding(dp(12), 0, dp(8), 0);
         header.setGravity(Gravity.CENTER_VERTICAL);
         header.setBackgroundColor(PANEL);
         LinearLayout headings = new LinearLayout(this);
         headings.setOrientation(LinearLayout.VERTICAL);
-        TextView title = text("EasyDuck", 18, ACCENT);
+        title = text("EasyDuck", 18, ACCENT);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         headings.addView(title);
         addressLabel = text("", 12, MUTED);
@@ -125,9 +221,18 @@ public final class MainActivity extends Activity {
         addressLabel.setEllipsize(TextUtils.TruncateAt.END);
         headings.addView(addressLabel);
         header.addView(headings, new LinearLayout.LayoutParams(0, -2, 1));
-        Button address = button("连接地址");
+        Button address = addressButton = button("连接地址");
         address.setOnClickListener(view -> showAddressDialog());
         header.addView(address);
+        orientationButton = button("横屏");
+        orientationButton.setOnClickListener(view -> setRequestedOrientation(isLandscape()
+                ? ActivityInfo.SCREEN_ORIENTATION_USER_PORTRAIT
+                : ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE));
+        header.addView(orientationButton);
+        landscapeSettings = button("设置");
+        landscapeSettings.setVisibility(View.GONE);
+        landscapeSettings.setOnClickListener(this::showLandscapeSettings);
+        header.addView(landscapeSettings);
         layout.addView(header);
 
         web = new WebView(this);
@@ -143,7 +248,18 @@ public final class MainActivity extends Activity {
         });
         web.setWebViewClient(new WebViewClient() {
             @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-                return !boardUrl(request.getUrl());
+                Uri destination = request.getUrl();
+                if ("easyduck-ui".equals(destination.getScheme())) {
+                    String current = view.getUrl();
+                    if (request.isForMainFrame() && "appearance".equals(destination.getHost())
+                            && current != null && boardUrl(Uri.parse(current))
+                            && Uri.parse(current).getPort() == 9527) {
+                        setAppearance(destination.getQueryParameter("lang"),
+                                destination.getQueryParameter("theme"), false);
+                    }
+                    return true;
+                }
+                return !boardUrl(destination);
             }
 
             @Override public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
@@ -152,11 +268,32 @@ public final class MainActivity extends Activity {
                         null, new ByteArrayInputStream(new byte[0]));
             }
 
+            @Override public void onPageStarted(WebView view, String url, android.graphics.Bitmap icon) {
+                overlaySupported = false;
+                updateViewport();
+            }
+
             @Override public void onPageFinished(WebView view, String url) {
                 if (!boardUrl(Uri.parse(url))) return;
                 if (!foreground) view.evaluateJavascript(RELEASE_CONTROL, null);
                 if (controlFailed) return;
-                addressLabel.setText(host + " · 局域网遥控");
+                view.evaluateJavascript("document.querySelector('.intercom-panel')?.setAttribute('hidden','');"
+                        + "[document.documentElement.classList.contains('camera-backdrop'),"
+                        + "document.documentElement.lang,document.documentElement.dataset.theme];", result -> {
+                    if (result == null || !url.equals(view.getUrl())) return;
+                    try {
+                        JSONArray page = new JSONArray(result);
+                        overlaySupported = page.optBoolean(0);
+                        if (overlaySupported && (language == null || theme == null)) {
+                            setAppearance(language == null ? page.optString(1) : language,
+                                    theme == null ? page.optString(2) : theme, false);
+                        }
+                    } catch (JSONException ignored) {
+                        overlaySupported = false;
+                    }
+                    updateViewport();
+                });
+                label(addressLabel, host + " · 局域网遥控");
             }
 
             @Override public void onReceivedHttpError(WebView view, WebResourceRequest request,
@@ -171,19 +308,21 @@ public final class MainActivity extends Activity {
                 }
             }
         });
-        layout.addView(web, new LinearLayout.LayoutParams(-1, 0, 1));
+        FrameLayout content = new FrameLayout(this);
+        content.addView(web, new FrameLayout.LayoutParams(-1, -1));
+        layout.addView(new View(this), new LinearLayout.LayoutParams(-1, 0, 1));
 
-        LinearLayout footer = new LinearLayout(this);
+        LinearLayout footer = voiceFooter = new LinearLayout(this);
         footer.setOrientation(LinearLayout.VERTICAL);
         footer.setBackgroundColor(PANEL);
         footer.setPadding(dp(10), dp(4), dp(10), dp(4));
-        LinearLayout state = new LinearLayout(this);
+        LinearLayout state = voiceState = new LinearLayout(this);
         voiceStatus = text("对讲已关闭", 13, TEXT);
         routeStatus = text("", 12, ACCENT);
         state.addView(voiceStatus, new LinearLayout.LayoutParams(0, -2, 1));
         state.addView(routeStatus);
         footer.addView(state);
-        LinearLayout actions = new LinearLayout(this);
+        LinearLayout actions = voiceActions = new LinearLayout(this);
         voiceButton = button("开启对讲");
         voiceButton.setOnClickListener(view -> {
             if (voiceRequested) stopVoice("对讲已关闭", "manual");
@@ -215,7 +354,93 @@ public final class MainActivity extends Activity {
         actions.addView(talkButton, new LinearLayout.LayoutParams(0, -2, 1));
         footer.addView(actions);
         layout.addView(footer);
-        setContentView(layout);
+        content.addView(layout, new FrameLayout.LayoutParams(-1, -1));
+        layout.setBackgroundColor(Color.TRANSPARENT);
+        setContentView(content);
+        View.OnLayoutChangeListener syncViewport = (view, l, t, r, b, oldL, oldT, oldR, oldB) -> {
+            if (b - t != oldB - oldT) updateViewport();
+        };
+        header.addOnLayoutChangeListener(syncViewport);
+        footer.addOnLayoutChangeListener(syncViewport);
+        updateOrientationLayout();
+    }
+
+    private boolean isLandscape() {
+        return getResources().getConfiguration().orientation == Configuration.ORIENTATION_LANDSCAPE;
+    }
+
+    private void updateOrientationLayout() {
+        boolean landscape = isLandscape();
+        label(orientationButton, landscape ? "竖屏" : "横屏");
+        if (landscape) getWindow().addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+        else getWindow().clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+        voiceFooter.setOrientation(landscape ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL);
+        voiceFooter.setGravity(Gravity.CENTER_VERTICAL);
+        voiceState.setLayoutParams(new LinearLayout.LayoutParams(landscape ? 0 : -1, -2,
+                landscape ? 1 : 0));
+        voiceActions.setLayoutParams(new LinearLayout.LayoutParams(landscape ? 0 : -1, -2,
+                landscape ? 1.5f : 0));
+        updateViewport();
+    }
+
+    private void showLandscapeSettings(View anchor) {
+        PopupMenu options = new PopupMenu(themedContext(), anchor);
+        options.getMenu().add(tr("连接地址")).setOnMenuItemClickListener(item -> {
+            showAddressDialog();
+            return true;
+        });
+        options.getMenu().add(tr("切回竖屏")).setOnMenuItemClickListener(item -> {
+            setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_USER_PORTRAIT);
+            return true;
+        });
+        options.getMenu().add(light() ? tr("暗色") : tr("亮色")).setOnMenuItemClickListener(item -> {
+            setAppearance(english() ? "en" : "zh-CN", light() ? "night" : "day", true);
+            return true;
+        });
+        options.getMenu().add(english() ? "中文" : "English").setOnMenuItemClickListener(item -> {
+            setAppearance(english() ? "zh-CN" : "en", light() ? "day" : "night", true);
+            return true;
+        });
+        options.show();
+    }
+
+    private void updateViewport() {
+        boolean overlay = isLandscape() && overlaySupported;
+        int standardButtons = overlay ? View.GONE : View.VISIBLE;
+        addressButton.setVisibility(standardButtons);
+        orientationButton.setVisibility(standardButtons);
+        landscapeSettings.setVisibility(overlay ? View.VISIBLE : View.GONE);
+        addressLabel.setMaxWidth(overlay ? dp(132) : Integer.MAX_VALUE);
+        int headerHeight = appHeader.getHeight();
+        int footerHeight = voiceFooter.getHeight();
+        FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) web.getLayoutParams();
+        int top = overlay ? 0 : headerHeight;
+        int bottom = overlay ? 0 : footerHeight;
+        if (params.topMargin != top || params.bottomMargin != bottom) {
+            params.topMargin = top;
+            params.bottomMargin = bottom;
+            web.setLayoutParams(params);
+        }
+        appHeader.setBackgroundColor(overlay ? Color.TRANSPARENT : surfaceColor());
+        voiceFooter.setBackgroundColor(overlay ? Color.TRANSPARENT : surfaceColor());
+        if (overlaySupported) {
+            float density = getResources().getDisplayMetrics().density;
+            int topCss = overlay ? (int) Math.ceil(headerHeight / density) : 0;
+            int bottomCss = overlay ? (int) Math.ceil(footerHeight / density) : 0;
+            web.evaluateJavascript("document.documentElement.style.setProperty('--app-native-top','"
+                    + topCss + "px');document.documentElement.style.setProperty('--app-native-bottom','"
+                    + bottomCss + "px');document.documentElement.classList.toggle('merged-toolbar',"
+                    + overlay + ");", null);
+        }
+    }
+
+    @Override public void onConfigurationChanged(Configuration configuration) {
+        super.onConfigurationChanged(configuration);
+        activePointer = -1;
+        VoiceAudio session = audio;
+        if (session != null) session.endTalk();
+        web.evaluateJavascript("window.dispatchEvent(new Event('blur'));", null);
+        updateOrientationLayout();
     }
 
     private boolean handleTalkTouch(View button, MotionEvent event) {
@@ -253,7 +478,7 @@ public final class MainActivity extends Activity {
 
     private void beginTalk(VoiceAudio session) {
         if (!foreground || !hasWindowFocus()) return;
-        voiceStatus.setText("正在打开麦克风");
+        label(voiceStatus, "正在打开麦克风");
         session.beginTalk();
     }
 
@@ -275,19 +500,19 @@ public final class MainActivity extends Activity {
     }
 
     private void showAddressDialog() {
-        EditText input = new EditText(this);
+        EditText input = new EditText(themedContext());
         input.setInputType(InputType.TYPE_CLASS_PHONE);
         input.setSingleLine();
         input.setText(host == null ? "" : host);
-        input.setHint("例如 192.168.1.100");
-        AlertDialog dialog = new AlertDialog.Builder(this).setTitle("鸭子的局域网 IP")
-                .setView(input).setNegativeButton("取消", null)
-                .setPositiveButton("连接", null).create();
+        input.setHint(tr("例如 192.168.1.100"));
+        AlertDialog dialog = new AlertDialog.Builder(themedContext()).setTitle(tr("鸭子的局域网 IP"))
+                .setView(input).setNegativeButton(tr("取消"), null)
+                .setPositiveButton(tr("连接"), null).create();
         dialog.setOnShowListener(event -> dialog.getButton(AlertDialog.BUTTON_POSITIVE)
                 .setOnClickListener(view -> {
                     String candidate = input.getText().toString().trim();
                     if (!isLocalIp(candidate)) {
-                        input.setError("请输入有效的局域网 IP");
+                        input.setError(tr("请输入有效的局域网 IP"));
                         return;
                     }
                     stopVoice("对讲已关闭", "address_change");
@@ -334,14 +559,18 @@ public final class MainActivity extends Activity {
 
     private void displayConnectionError() {
         controlFailed = true;
-        addressLabel.setText("无法连到鸭子，请核对 Wi-Fi 和地址");
+        label(addressLabel, "无法连到鸭子，请核对 Wi-Fi 和地址");
     }
 
     private void openController() {
         bindLocalWifi();
         controlFailed = false;
-        addressLabel.setText("正在连接 " + host);
-        web.loadUrl("http://" + host + ":9527/");
+        label(addressLabel, "正在连接 " + host);
+        Uri.Builder address = new Uri.Builder().scheme("http").encodedAuthority(host + ":9527")
+                .path("/").appendQueryParameter("view", "app").appendQueryParameter("nativeUi", "1");
+        if (language != null) address.appendQueryParameter("lang", language);
+        if (theme != null) address.appendQueryParameter("theme", theme);
+        web.loadUrl(address.build().toString());
     }
 
     private void enableVoice() {
@@ -363,8 +592,8 @@ public final class MainActivity extends Activity {
         if (!foreground || !voiceRequested || voice != null) return;
         bindLocalWifi();
         final String address = host;
-        voiceStatus.setText("正在连接对讲");
-        voiceButton.setText("取消");
+        label(voiceStatus, "正在连接对讲");
+        label(voiceButton, "取消");
         try {
             VoiceConnection.Listener listener = new VoiceConnection.Listener() {
                 @Override public void ready() {
@@ -397,28 +626,28 @@ public final class MainActivity extends Activity {
             audio = new VoiceAudio(this, voice, new VoiceAudio.Listener() {
                 @Override public void listening() {
                     runOnUiThread(() -> { if (owner == voiceListener && audio != null && !audio.isTalking() && !audio.isFocusPaused()) {
-                        voiceStatus.setText("正在收听鸭子周围的声音");
-                        talkButton.setText("按住说话");
+                        label(voiceStatus, "正在收听鸭子周围的声音");
+                        label(talkButton, "按住说话");
                     } });
                 }
                 @Override public void focusPaused() {
                     runOnUiThread(() -> {
                         if (owner != voiceListener || audio == null || !audio.isFocusPaused()) return;
                         activePointer = -1;
-                        voiceStatus.setText("手机音频暂被占用，对讲保持连接");
-                        talkButton.setText("恢复收听");
+                        label(voiceStatus, "手机音频暂被占用，对讲保持连接");
+                        label(talkButton, "恢复收听");
                     });
                 }
 
                 @Override public void speaking() {
                     runOnUiThread(() -> { if (owner == voiceListener && audio != null && audio.isTalking()) {
-                        voiceStatus.setText("正在说话");
-                        talkButton.setText("松开收听");
+                        label(voiceStatus, "正在说话");
+                        label(talkButton, "松开收听");
                     } });
                 }
                 @Override public void route(boolean speaker) {
                     runOnUiThread(() -> { if (owner == voiceListener) {
-                        routeStatus.setText(speaker ? "手机外放" : "手机未使用外放");
+                        label(routeStatus, speaker ? "手机外放" : "手机未使用外放");
                     } });
                 }
                 @Override public void failed(String reason, String code) {
@@ -430,10 +659,10 @@ public final class MainActivity extends Activity {
                 }
             });
             setVolumeControlStream(AudioManager.STREAM_VOICE_CALL);
-            voiceStatus.setText("正在收听鸭子周围的声音");
+            label(voiceStatus, "正在收听鸭子周围的声音");
             voiceWasReady = true;
             voiceRetries = 0;
-            voiceButton.setText("关闭对讲");
+            label(voiceButton, "关闭对讲");
             talkButton.setEnabled(true);
         } catch (RuntimeException error) {
             stopVoice("无法启用手机扬声器", "playback_error");
@@ -446,7 +675,7 @@ public final class MainActivity extends Activity {
             return;
         }
         releaseVoice("连接中断，正在重连", "connection_error");
-        voiceButton.setText("取消重连");
+        label(voiceButton, "取消重连");
         web.postDelayed(retryVoice, VOICE_RETRY_MS[voiceRetries++]);
     }
 
@@ -464,11 +693,11 @@ public final class MainActivity extends Activity {
         if (voice != null) voice.close(code);
         voice = null;
         activePointer = -1;
-        voiceButton.setText("开启对讲");
-        talkButton.setText("按住说话");
+        label(voiceButton, "开启对讲");
+        label(talkButton, "按住说话");
         talkButton.setEnabled(false);
-        voiceStatus.setText(reason);
-        routeStatus.setText("");
+        label(voiceStatus, reason);
+        label(routeStatus, "");
         setVolumeControlStream(AudioManager.USE_DEFAULT_STREAM_TYPE);
     }
 
@@ -476,7 +705,7 @@ public final class MainActivity extends Activity {
         super.onRequestPermissionsResult(request, permissions, results);
         if (request != MICROPHONE_PERMISSION) return;
         if (results.length == 0 || results[0] != PackageManager.PERMISSION_GRANTED) {
-            voiceStatus.setText("开启对讲需要麦克风权限");
+            label(voiceStatus, "开启对讲需要麦克风权限");
             return;
         }
         if (foreground) enableVoice();

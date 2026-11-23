@@ -1,11 +1,11 @@
-:root{color-scheme:dark;--bg:#111718;--panel:#1b2324;--raised:#252f30;--line:#354041;--text:#f0f3ef;--muted:#9dadaa;--accent:#d8f88b;--ink:#24301a;--danger:#ff9082;--shadow:0 18px 65px #0003}*{box-sizing:border-box}html[data-theme=day]{color-scheme:light;--bg:#eef1e9;--panel:#fff;--raised:#f2f5ed;--line:#d7dfd1;--text:#202c28;--muted:#63756b;--accent:#c9e97c;--ink:#253518;--danger:#bd3f32;--shadow:0 18px 55px #25351a0a}body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;line-height:1.5}button,a,input{-webkit-tap-highlight-color:transparent}button,a{touch-action:manipulation}button{font:inherit;color:var(--text);background:var(--raised);border:1px solid var(--line);border-radius:10px;padding:10px 17px;cursor:pointer;transition:background .15s,transform .15s}button:hover:not(:disabled){border-color:var(--accent);background:var(--line)}button:active:not(:disabled){transform:scale(.98)}button:disabled{opacity:.38;cursor:not-allowed}button:focus-visible,a:focus-visible,input:focus-visible,.joy:focus-visible{outline:3px solid var(--accent);outline-offset:4px}[hidden]{display:none!important}a{color:inherit;text-decoration:none}a:hover{color:var(--accent)}small{font-size:12px;color:var(--muted)}b,strong{font-weight:650}
+:root{color-scheme:dark;--bg:#111718;--panel:#1b2324;--raised:#252f30;--line:#354041;--text:#f0f3ef;--muted:#9dadaa;--accent:#d8f88b;--accent-ink:#d8f88b;--ink:#24301a;--danger:#ff9082;--shadow:0 18px 65px #0003}*{box-sizing:border-box}html[data-theme=day]{color-scheme:light;--bg:#eef1e9;--panel:#fff;--raised:#f2f5ed;--line:#d7dfd1;--text:#202c28;--muted:#63756b;--accent:#c9e97c;--accent-ink:#3f592b;--ink:#253518;--danger:#bd3f32;--shadow:0 18px 55px #25351a0a}body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;line-height:1.5}button,a,input{-webkit-tap-highlight-color:transparent}button,a{touch-action:manipulation}button{font:inherit;color:var(--text);background:var(--raised);border:1px solid var(--line);border-radius:10px;padding:10px 17px;cursor:pointer;transition:background .15s,transform .15s}button:hover:not(:disabled){border-color:var(--accent);background:var(--line)}button:active:not(:disabled){transform:scale(.98)}button:disabled{opacity:.38;cursor:not-allowed}button:focus-visible,a:focus-visible,input:focus-visible,.joy:focus-visible{outline:3px solid var(--accent);outline-offset:4px}[hidden]{display:none!important}a{color:inherit;text-decoration:none}a:hover{color:var(--accent-ink)}small{font-size:12px;color:var(--muted)}b,strong{font-weight:650}
 .wrap{max-width:1200px;padding:0 32px;margin:auto}
 .top{min-height:100px;display:flex;align-items:center;gap:28px;border-bottom:1px solid var(--line)}
 .brand{display:flex;gap:13px;align-items:center}
 .brand>span:last-child{display:grid;gap:0}
 .brand b{font-size:14px;letter-spacing:2px}
 .brand-mark{font-size:42px;font-weight:800;letter-spacing:-5px}
-.brand-mark>span{color:var(--accent)}nav{margin-left:auto;display:flex;align-items:center;gap:24px;font-size:13px}nav button{padding:7px 10px;background:transparent}
+.brand-mark>span{color:var(--accent-ink)}nav{margin-left:auto;display:flex;align-items:center;gap:24px;font-size:13px}nav button{padding:7px 10px;background:transparent}
 .stop{color:var(--danger);border-color:var(--danger);background:transparent;font-weight:700;min-width:116px}
 .stop:hover:not(:disabled){background:#ff908218;border-color:var(--danger)}kbd{font:10px monospace;opacity:.7;margin-left:8px}main{padding:28px 0 25px}
 .dashboard{display:flex;justify-content:space-between;align-items:center;gap:28px;padding:0 4px 24px}
@@ -27,10 +27,10 @@
 .status-message.error{color:var(--danger)}
 .controller{border:1px solid var(--line);border-radius:22px;background:var(--panel);box-shadow:var(--shadow);overflow:hidden}
 .controller-top{display:flex;justify-content:space-between;align-items:center;padding:25px 30px 15px}
-.eyebrow{font-size:10px;font-weight:650;letter-spacing:2px;color:var(--accent)}h1{font-size:21px;margin:3px 0 0;font-weight:600}
+.eyebrow{font-size:10px;font-weight:650;letter-spacing:2px;color:var(--accent-ink)}h1{font-size:21px;margin:3px 0 0;font-weight:600}
 .speed{width:155px}
 .speed label{display:flex;justify-content:space-between;font-size:12px}
-.speed b{color:var(--accent)}input[type=range]{accent-color:var(--accent);width:100%;height:24px;cursor:pointer}
+.speed b{color:var(--accent-ink)}input[type=range]{accent-color:var(--accent);width:100%;height:24px;cursor:pointer}
 .gamepad{display:grid;grid-template-columns:1fr 230px 1fr;align-items:center;gap:25px;padding:12px 30px 28px}
 .stick-area{text-align:center}
 .stick-area h2{font-size:14px;font-weight:500;color:var(--muted);margin:0 0 16px}
@@ -133,14 +133,14 @@
 .language-picker{display:inline-flex;align-items:center;flex-shrink:0;border:1px solid var(--line);border-radius:8px;overflow:hidden}
 nav .language-picker button{font:inherit;font-size:12px;padding:7px 9px;border:0;border-radius:0;background:transparent;color:var(--muted);cursor:pointer;white-space:nowrap}
 nav .language-picker button+button{border-left:1px solid var(--line)}
-nav .language-picker button[aria-pressed=true]{background:var(--panel);color:var(--accent)}
+nav .language-picker button[aria-pressed=true]{background:var(--panel);color:var(--accent-ink)}
 nav .language-picker button:focus-visible{outline:2px solid var(--accent);outline-offset:-3px}
 
 .camera-panel{margin:0 0 16px;padding:14px 18px}
 .camera-top{display:flex;align-items:center;justify-content:space-between;gap:12px}
 .camera-panel p{margin:8px 0 0;color:var(--muted)}
 .camera-panel p:empty{display:none}
-.camera-panel img{display:block;width:100%;height:min(34vh,320px);object-fit:contain;margin:12px auto 0;border-radius:10px;background:#080c0d}
+.camera-panel img{display:block;width:min(100%,42vh,400px);aspect-ratio:1;object-fit:contain;margin:12px auto 0;border-radius:10px;background:#080c0d;transform:rotate(90deg)}
 
 .battery-led-panel{margin:16px 0;padding:16px 18px}
 .battery-led-panel h2{font-size:16px;margin:0 0 12px}
@@ -153,3 +153,585 @@ nav .language-picker button:focus-visible{outline:2px solid var(--accent);outlin
 .led-green{background:#58c987}.led-yellow{background:#e4bd4f}.led-red{background:#e27171}
 
 .led-blue{background:#609ef8}.led-white{background:#f4f4f4;border:1px solid #777}.led-purple{background:#bb75ed}
+
+
+.portrait-menu,
+.portrait-adjustments { display: none; }
+
+@media (max-width: 700px) and (orientation: portrait) {
+  .app-layout {
+    --app-stick: clamp(94px, min(38vw, 21vh), 156px);
+    --app-preview: min(76vw, clamp(56px, calc(100vh - 365px), 285px));
+  }
+
+  .app-layout .wrap {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 7px 6px;
+    padding: 6px 9px 12px;
+  }
+
+  .app-layout main { display: contents; }
+  .app-layout main > * { grid-column: 1 / -1; }
+  .app-layout .intercom-panel { display: none; }
+  .app-layout .top {
+    grid-column: 2;
+    grid-row: 1;
+    min-height: 44px;
+    padding: 0;
+    gap: 5px;
+    border: 0;
+    flex-wrap: nowrap;
+  }
+
+  .app-layout .brand,
+  .app-layout .stop kbd { display: none; }
+  .app-layout .top .stop,
+  .app-layout .portrait-menu summary {
+    min-width: 44px;
+    min-height: 44px;
+    display: grid;
+    place-items: center;
+    margin: 0;
+    padding: 5px 8px;
+    font-size: 13px;
+  }
+
+  .app-layout .portrait-menu {
+    display: block;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--panel);
+  }
+
+  .app-layout .portrait-menu summary {
+    list-style: none;
+    color: var(--text);
+  }
+
+  .app-layout .portrait-menu summary::-webkit-details-marker { display: none; }
+  .app-layout .portrait-menu nav {
+    position: absolute;
+    right: 0;
+    top: calc(100% + 4px);
+    width: max-content;
+    max-width: calc(100vw - 18px);
+    margin: 0;
+    padding: 10px;
+    display: grid;
+    grid-template-columns: repeat(2, auto);
+    align-items: center;
+    gap: 6px 10px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--panel);
+    box-shadow: var(--shadow);
+  }
+
+  .app-layout .portrait-menu:not([open]) nav { display: none; }
+  .app-layout .portrait-menu nav a { padding: 10px 4px; white-space: nowrap; }
+
+  .app-layout .dashboard {
+    grid-column: 1;
+    grid-row: 1;
+    gap: 7px;
+    padding: 0 3px;
+    min-width: 0;
+  }
+
+  .app-layout .robot-status { gap: 8px; min-width: 0; }
+  .app-layout .status-dot { width: 8px; height: 8px; flex: 0 0 8px; }
+  .app-layout .robot-status strong { font-size: 14px; letter-spacing: 0; }
+  .app-layout .vitals { gap: 6px; }
+  .app-layout .vitals > div:not(:first-child) { display: none; }
+  .app-layout .vitals small { font-size: 10px; }
+  .app-layout .vitals strong { font-size: 13px; white-space: nowrap; }
+  .app-layout .control-strip {
+    flex-direction: row;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 5px 2px 8px;
+  }
+
+  .app-layout .control-strip > div:first-child { min-width: 0; display: block; }
+  .app-layout .control-strip b { font-size: 12px; }
+  .app-layout .control-strip small { display: none; }
+  .app-layout .control-strip .buttons { flex: 0 0 auto; gap: 4px; }
+  .app-layout .control-strip .buttons button {
+    min-height: 44px;
+    padding: 4px 7px;
+    font-size: 11px;
+    white-space: nowrap;
+  }
+
+  .app-layout .status-message:not(.error) { display: none; }
+  .app-layout .status-message { min-height: 0; padding: 1px 4px; }
+  .app-layout .camera-panel { margin: 0; padding: 3px 8px 4px; background: var(--panel); }
+  .app-layout .camera-top { min-height: 44px; }
+  .app-layout .camera-top strong { font-size: 13px; }
+  .app-layout .camera-top button {
+    min-height: 44px;
+    padding: 4px 10px;
+    font-size: 12px;
+  }
+
+  .app-layout .camera-panel p { margin: 0 0 2px; font-size: 11px; }
+  .app-layout .camera-panel img {
+    width: var(--app-preview);
+    margin: 2px auto 4px;
+    border-radius: 7px;
+  }
+
+  .app-layout .controller { border-radius: 14px; }
+  .app-layout .controller-top { padding: 3px 9px 0; }
+  .app-layout .controller-top .eyebrow { display: none; }
+  .app-layout .controller-top h1 { font-size: 13px; margin: 0; }
+  .app-layout .speed { width: min(44%, 155px); }
+  .app-layout .speed label { font-size: 11px; }
+  .app-layout .speed input { display: block; min-height: 27px; margin: 0; }
+  .app-layout .gamepad {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+    gap: 6px;
+    padding: 2px 8px 7px;
+  }
+
+  .app-layout .stick-area:first-child { grid-area: 1 / 1; }
+  .app-layout .stick-area:last-child { grid-area: 1 / 2; }
+  .app-layout .stick-area h2 { font-size: 11px; margin: 0 0 4px; }
+  .app-layout .stick-area p,
+  .app-layout .controller-foot { display: none; }
+  .app-layout .joy { width: var(--app-stick); height: var(--app-stick); max-width: 100%; }
+  .app-layout .knob { width: clamp(38px, 11vw, 52px); height: clamp(38px, 11vw, 52px); }
+  .app-layout .axis { font-size: 9px; }
+  .app-layout .up { top: 6px; }
+  .app-layout .down { bottom: 6px; }
+  .app-layout .left { left: 5px; }
+  .app-layout .right { right: 5px; }
+
+  .app-layout .action-area {
+    grid-area: 2 / 1 / 3 / -1;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 4px;
+    padding: 0;
+  }
+
+  .app-layout .action-grid { display: contents; }
+  .app-layout .drive-button { grid-area: 1 / 1 / 2 / 4; }
+  .app-layout .default-pose { grid-area: 1 / 4 / 2 / -1; }
+  .app-layout .action-grid button { grid-column: span 2; }
+  .app-layout .action-area button {
+    display: grid;
+    grid-template-columns: 1fr;
+    place-items: center;
+    min-height: 44px;
+    padding: 4px 3px;
+    text-align: center;
+    font-size: 12px;
+    line-height: 1.2;
+  }
+
+  .app-layout .action-area button b { font-size: 12px; }
+  .app-layout .action-area .button-symbol,
+  .app-layout .action-area button small,
+  .app-layout .action-area .call-meter { display: none; }
+
+  .app-layout .portrait-adjustments { display: block; border-top: 1px solid var(--line); }
+  .app-layout .portrait-adjustments summary { min-height: 44px; padding: 11px 9px; font-size: 12px; }
+  .app-layout .portrait-adjustments .head-adjustments { padding: 0 9px 9px; }
+  .app-layout .portrait-adjustments .head-controls input { min-height: 32px; }
+  .app-layout .portrait-adjustments .head-zero { min-height: 44px; }
+  .app-layout .secondary,
+  .app-layout .battery-led-panel { margin: 0; }
+  .app-layout .footnote { margin: 3px 4px; }
+}
+
+
+@media (orientation: landscape) {
+  .app-layout .wrap {
+    height: 100vh;
+    display: grid;
+    grid-template-columns: minmax(100px, 1fr) minmax(130px, 1.85fr) minmax(100px, 1fr);
+    grid-template-rows: 44px minmax(0, 1fr) 44px;
+    gap: 5px 8px;
+    padding: 3px 8px 5px;
+    max-width: 1100px;
+  }
+
+  .app-layout main,
+  .app-layout .controller,
+  .app-layout .gamepad { display: contents; }
+
+  .app-layout .brand,
+  .app-layout .stop kbd,
+  .app-layout .controller-foot,
+  .app-layout .controller-top > div:first-child,
+  .app-layout .stick-area p,
+  .app-layout .footnote,
+  .app-layout .intercom-panel { display: none; }
+
+  .app-layout .top {
+    grid-area: 1 / 3;
+    position: relative;
+    min-height: 0;
+    justify-content: flex-end;
+    flex-wrap: nowrap;
+    border: 0;
+    padding: 0;
+    gap: 5px;
+  }
+
+  .app-layout .top .stop,
+  .app-layout .portrait-menu > summary {
+    min-height: 44px;
+    min-width: 44px;
+    display: grid;
+    place-items: center;
+    margin: 0;
+    padding: 4px 8px;
+    font-size: 12px;
+  }
+
+  .app-layout .portrait-menu {
+    display: block;
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    background: var(--panel);
+  }
+
+  .app-layout .portrait-menu > summary { list-style: none; }
+  .app-layout .portrait-menu > summary::-webkit-details-marker { display: none; }
+  .app-layout .app-menu-body {
+    position: absolute;
+    top: calc(100% + 4px);
+    right: 0;
+    width: min(330px, 88vw);
+    max-height: calc(100vh - 55px);
+    overflow: auto;
+    padding: 7px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--panel);
+    box-shadow: var(--shadow);
+  }
+
+  .app-layout .portrait-menu:not([open]) .app-menu-body { display: none; }
+  .app-layout .app-menu-body nav {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    margin: 0;
+    padding: 3px;
+    gap: 5px 10px;
+    border: 0;
+  }
+
+  .app-layout .app-menu-body nav a { padding: 10px 3px; }
+  .app-layout .app-menu-body .portrait-adjustments { display: block; }
+  .app-layout .app-menu-body summary { padding: 9px 7px; }
+  .app-layout .app-menu-body .head-adjustments { padding: 0 7px 7px; }
+  .app-layout .app-menu-body .battery-led-panel,
+  .app-layout .app-menu-body .secondary { margin: 5px 0; }
+
+  .app-layout .dashboard {
+    grid-area: 1 / 1;
+    padding: 0 3px;
+    min-width: 0;
+    gap: 6px;
+  }
+
+  .app-layout .robot-status { gap: 7px; min-width: 0; }
+  .app-layout .robot-status strong { font-size: 12px; letter-spacing: 0; }
+  .app-layout .robot-status small { font-size: 10px; }
+  .app-layout .status-dot { width: 7px; height: 7px; flex: 0 0 7px; }
+  .app-layout .vitals { gap: 0; }
+  .app-layout .vitals > div:not(:first-child) { display: none; }
+  .app-layout .vitals small { font-size: 10px; }
+  .app-layout .vitals strong { font-size: 12px; white-space: nowrap; }
+
+  .app-layout .control-strip {
+    grid-area: 1 / 2;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    min-height: 0;
+    background: transparent;
+    border: 0;
+    padding: 0;
+    gap: 5px;
+  }
+
+  .app-layout .control-strip > div:first-child { display: none; }
+  .app-layout .control-strip .buttons { gap: 4px; }
+  .app-layout .control-strip .buttons button {
+    min-height: 44px;
+    padding: 4px 8px;
+    font-size: 11px;
+    white-space: nowrap;
+  }
+
+  .app-layout .camera-panel {
+    grid-area: 2 / 2;
+    position: relative;
+    min-height: 0;
+    display: grid;
+    place-items: center;
+    margin: 0;
+    padding: 0;
+    background: #080c0d;
+  }
+
+  .app-layout .camera-top {
+    position: absolute;
+    z-index: 1;
+    top: 4px;
+    right: 5px;
+    left: 5px;
+    color: #f0f3ef;
+  }
+
+  .app-layout .camera-top strong { font-size: 11px; text-shadow: 0 1px 5px #000; }
+  .app-layout .camera-top button { min-height: 40px; font-size: 11px; padding: 4px 6px; }
+  .app-layout .camera-panel p {
+    z-index: 1;
+    max-width: 95%;
+    margin: 24px 0 0;
+    text-align: center;
+    font-size: 11px;
+    color: #f0f3ef;
+  }
+
+  .app-layout .camera-panel img {
+    width: min(100%, max(1px, calc(100vh - 106px)));
+    margin: 0;
+    border-radius: 5px;
+  }
+
+  .app-layout .status-message { display: none; }
+  .app-layout .status-message.error {
+    display: block;
+    grid-area: 2 / 2;
+    align-self: end;
+    z-index: 2;
+    min-height: 0;
+    padding: 3px 5px;
+    background: var(--panel);
+    pointer-events: none;
+  }
+
+  .app-layout .stick-area:first-child { grid-area: 2 / 1; }
+  .app-layout .head-area { grid-area: 2 / 3; }
+  .app-layout .stick-area {
+    min-height: 0;
+    min-width: 0;
+    display: grid;
+    align-content: center;
+    justify-items: center;
+  }
+
+  .app-layout .stick-area h2 { margin: 0 0 3px; font-size: 11px; }
+  .app-layout .joy {
+    --landscape-stick: clamp(58px, min(calc(100vh - 128px), 23vw), 155px);
+    width: var(--landscape-stick);
+    height: var(--landscape-stick);
+    margin: 0;
+  }
+
+  .app-layout .knob { width: clamp(27px, 6vw, 52px); height: clamp(27px, 6vw, 52px); }
+  .app-layout .axis { font-size: 8px; }
+  .app-layout .up { top: 4px; }
+  .app-layout .down { bottom: 4px; }
+  .app-layout .left { left: 3px; }
+  .app-layout .right { right: 3px; }
+
+  .app-layout .action-area {
+    grid-area: 3 / 1 / 4 / 3;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 4px;
+    padding: 0;
+  }
+
+  .app-layout .action-grid { display: contents; }
+  .app-layout #call { grid-column: auto; }
+  .app-layout .action-area button {
+    grid-column: auto;
+    display: grid;
+    grid-template-columns: 1fr;
+    place-items: center;
+    min-width: 0;
+    min-height: 44px;
+    padding: 2px 3px;
+    font-size: 11px;
+    line-height: 1.15;
+    text-align: center;
+    white-space: nowrap;
+  }
+
+  .app-layout .action-area button b { font-size: 11px; }
+  .app-layout .action-area .button-symbol,
+  .app-layout .action-area button small,
+  .app-layout .action-area .call-meter { display: none; }
+  .app-layout .drive-button { order: -2; }
+  .app-layout .default-pose { order: -1; }
+  .app-layout .controller-top { grid-area: 3 / 3; min-width: 0; padding: 0 4px; }
+  .app-layout .speed { width: 100%; }
+  .app-layout .speed input { display: block; margin: 0; }
+}
+
+
+@media (orientation: landscape) {
+  .app-layout.camera-backdrop {
+    --app-native-top: 0px;
+    --app-native-bottom: 0px;
+    --app-usable-height: calc(100vh - var(--app-native-top) - var(--app-native-bottom));
+    --hud-glass: rgba(17, 27, 28, .50);
+    --hud-border: rgba(233, 245, 231, .42);
+    --hud-text: #f7faf1;
+    --hud-muted: #e4ece2;
+    --hud-shadow: 0 1px 3px #000, 0 0 5px #000;
+    --hud-background: radial-gradient(ellipse at center, #2e4140, #111718 78%);
+    --hud-vignette: linear-gradient(180deg, #080d0dda, transparent 30%, transparent 68%, #080d0ded),
+      linear-gradient(90deg, #080d0db7, transparent 32%, transparent 68%, #080d0db7);
+    --hud-camera: rgba(9, 16, 16, .28);
+    --hud-axis: #e0efe357;
+    --hud-stick: rgba(9, 16, 16, .38);
+    --hud-knob: rgba(203, 236, 159, .31);
+    --hud-knob-border: rgba(229, 255, 192, .72);
+    --hud-drive: #e6ffa9;
+    --hud-drive-border: #c9e97c;
+    --hud-stop: #ffb9af;
+    --hud-stop-border: #ff958a;
+    --hud-stop-fill: rgba(80, 19, 17, .47);
+  }
+
+  html[data-theme="day"].app-layout.camera-backdrop {
+    --hud-glass: rgba(255, 255, 255, .80);
+    --hud-border: #a7b6a7;
+    --hud-text: var(--text);
+    --hud-muted: #485d51;
+    --hud-shadow: none;
+    --hud-background: radial-gradient(ellipse at center, #f7f9f3, #e4ece1 85%);
+    --hud-vignette: none;
+    --hud-camera: transparent;
+    --hud-axis: #526a595c;
+    --hud-stick: rgba(255, 255, 255, .66);
+    --hud-knob: #d4e7b6;
+    --hud-knob-border: #728c53;
+    --hud-drive: #354823;
+    --hud-drive-border: #829b5e;
+    --hud-stop: #922e28;
+    --hud-stop-border: #cc8177;
+    --hud-stop-fill: #ffebe7;
+  }
+
+  .app-layout.camera-backdrop .wrap {
+    position: relative;
+    isolation: isolate;
+    padding-top: calc(var(--app-native-top) + 3px);
+    padding-bottom: calc(var(--app-native-bottom) + 5px);
+  }
+
+  .app-layout.camera-backdrop .wrap::before,
+  .app-layout.camera-backdrop .wrap::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+  }
+
+  .app-layout.camera-backdrop .wrap::before {
+    z-index: -3;
+    background: var(--hud-background);
+  }
+
+  .app-layout.camera-backdrop .wrap::after {
+    z-index: -1;
+    background: var(--hud-vignette);
+  }
+
+  .app-layout.camera-backdrop .camera-panel {
+    background: var(--hud-camera);
+  }
+
+  .app-layout.camera-backdrop .camera-panel img {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    --wide-camera-height: max(1px, min(calc(var(--app-usable-height) - 112px), 22vw));
+    width: var(--wide-camera-height);
+    height: calc(var(--wide-camera-height) * 16 / 9);
+    margin: 0;
+    border-radius: 8px;
+    background: transparent;
+    object-fit: cover;
+    transform: translate(-50%, -50%) rotate(90deg);
+    pointer-events: none;
+  }
+
+  .app-layout.camera-backdrop .camera-top {
+    justify-content: flex-end;
+    pointer-events: none;
+  }
+
+  .app-layout.camera-backdrop .camera-top strong { display: none; }
+  .app-layout.camera-backdrop .camera-top button { pointer-events: auto; }
+  .app-layout.merged-toolbar .camera-top { display: none; }
+  .app-layout.merged-toolbar .control-strip {
+    position: fixed;
+    left: 150px;
+    right: 78px;
+    top: 0;
+    min-height: var(--app-native-top);
+    justify-content: flex-start;
+    z-index: 11;
+    pointer-events: none;
+  }
+
+  .app-layout.merged-toolbar .control-strip .buttons button { pointer-events: auto; }
+
+  .app-layout.camera-backdrop .camera-panel p {
+    align-self: end;
+    margin: 0 4px 8px;
+    color: var(--hud-text);
+  }
+  .app-layout.camera-backdrop .top { background: transparent; }
+  .app-layout.camera-backdrop .dashboard,
+  .app-layout.camera-backdrop .speed,
+  .app-layout.camera-backdrop .stick-area h2,
+  .app-layout.camera-backdrop .axis {
+    color: var(--hud-text);
+    text-shadow: var(--hud-shadow);
+  }
+
+  .app-layout.camera-backdrop .dashboard small { color: var(--hud-muted); }
+  .app-layout.camera-backdrop .portrait-menu,
+  .app-layout.camera-backdrop .action-area button,
+  .app-layout.camera-backdrop .camera-top button,
+  .app-layout.camera-backdrop .control-strip button {
+    background: var(--hud-glass);
+    border-color: var(--hud-border);
+    color: var(--hud-text);
+  }
+
+  .app-layout.camera-backdrop .portrait-menu > summary { color: var(--hud-text); }
+  .app-layout.camera-backdrop .drive-button { border-color: var(--hud-drive-border); color: var(--hud-drive); }
+  .app-layout.camera-backdrop .top .stop {
+    background: var(--hud-stop-fill);
+    border-color: var(--hud-stop-border);
+    color: var(--hud-stop);
+  }
+
+  .app-layout.camera-backdrop .joy {
+    --landscape-stick: clamp(58px, min(calc(var(--app-usable-height) - 128px), 23vw), 155px);
+    background:
+      linear-gradient(transparent calc(50% - .5px), var(--hud-axis) 50%, transparent calc(50% + .5px)),
+      linear-gradient(90deg, transparent calc(50% - .5px), var(--hud-axis) 50%, transparent calc(50% + .5px)),
+      var(--hud-stick);
+    border-color: var(--hud-border);
+  }
+
+  .app-layout.camera-backdrop .knob {
+    background: var(--hud-knob);
+    border-color: var(--hud-knob-border);
+  }
+}

@@ -17,8 +17,19 @@ controlLocale.init($('control-language'),()=>{
  renderCall();
  renderNotice();
 });
-try{setTheme(localStorage.getItem('easyduck-theme')||'night');}catch(_){setTheme('night');}
-$('theme-button').onclick=()=>setTheme(document.documentElement.dataset.theme==='day'?'night':'day');
+const appearanceParams = new URLSearchParams(location.search);
+const requestedTheme = appearanceParams.get('theme');
+if(['day','night'].includes(requestedTheme))setTheme(requestedTheme);
+else try{setTheme(localStorage.getItem('easyduck-theme'));}catch(_){setTheme('night');}
+document.addEventListener('easyduck-appearance',()=>{
+ if(appearanceParams.get('nativeUi')!=='1')return;
+ const appearance=new URLSearchParams({lang:controlLocale.language,theme:document.documentElement.dataset.theme});
+ location.href='easyduck-ui://appearance?'+appearance;
+});
+$('theme-button').onclick=()=>{
+ setTheme(document.documentElement.dataset.theme==='day'?'night':'day');
+ document.dispatchEvent(new Event('easyduck-appearance'));
+};
 let statusBusy=false, commandRequest=null, commandPending=false, commandSequence=0;
 const controlId=globalThis.crypto?.randomUUID?.()||`${Date.now()}-${Math.random().toString(16).slice(2)}`;
 let controlGeneration=null, webAllowed=false;

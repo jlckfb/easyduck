@@ -6,4 +6,8 @@
         <item name="android:colorAccent">#D8F88B</item>
         <item name="android:windowLightStatusBar">false</item>
     </style>
+    <style name="EasyDuckLightTheme" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">#EEF2E8</item>
+        <item name="android:colorAccent">#375224</item>
+    </style>
 </resources>

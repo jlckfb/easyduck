@@ -20,8 +20,8 @@ const controlLocale = (() => {
   "正在连接机器人…": "Connecting to the robot…",
   "手柄": "Gamepad",
   "手柄优先": "Gamepad priority",
-  "用网页控制": "Take web control",
-  "交还手柄": "Return to gamepad",
+  "用网页控制": "Web control",
+  "交还手柄": "To gamepad",
   "等待连接…": "Waiting for connection…",
   "虚拟手柄": "Virtual gamepad",
   "DRIVE / 移动": "DRIVE",
@@ -74,7 +74,6 @@ const controlLocale = (() => {
   "鸣叫": "Calling",
   "回落中": "Fading",
   "机器人状态读取失败，请检查连接": "Could not read robot status. Check the connection.",
-  "机器人状态读取超时，请检查连接": "Robot status timed out. Check the connection.",
   "网页": "Web",
   "等待连接": "Waiting for connection",
   "已连接": "Connected",
@@ -146,6 +145,9 @@ const controlLocale = (() => {
   "无法确认手柄连接状态：{detail}": "Could not confirm the gamepad connection: {detail}",
   "robotd通信失败：{detail}；没有自动重发动作": "Could not communicate with robotd: {detail}. The action was not retried.",
   "当前连接已断开，且没有可用的无线地址。请重新连接 USB 或从 Wi-Fi 地址打开网页。": "The connection was lost and no Wi-Fi address is available. Reconnect USB or open the page using the Wi-Fi address.",
+  "更多": "More",
+  "头部微调": "Head trim",
+  "机器人状态读取超时，请检查连接": "Robot status timed out. Check the connection.",
   "状态指示灯": "Status indicator",
   "启用状态灯": "Enable status light",
   "电量呼吸速度": "Battery breathing speed",
@@ -170,8 +172,8 @@ const controlLocale = (() => {
   "无法保存电量灯设置": "Could not save battery light settings",
   "电量灯不可用": "Battery light unavailable",
   "USB 摄像头": "USB camera",
-  "开启摄像头": "Turn on camera",
-  "关闭摄像头": "Turn off camera",
+  "开启摄像头": "Camera on",
+  "关闭摄像头": "Camera off",
   "正在连接摄像头…": "Connecting to camera…",
   "USB 摄像头画面": "Live USB camera",
   "摄像头不可用，请检查 USB 连接或关闭其他预览页。": "Camera unavailable. Check the USB connection or close the other preview.",
@@ -208,7 +210,19 @@ const controlLocale = (() => {
   try{localStorage.setItem(storageKey,language);}catch(_){}
   for(const update of staticLabels)update();
  }
+ let refresh = () => {};
+ function setLanguage(next){
+  if(!['zh-CN','en'].includes(next)||next===language)return;
+  language=next;
+  const address=new URL(location.href);
+  address.searchParams.set('lang',language);
+  history.replaceState(null,'',address);
+  apply();
+  refresh();
+  return true;
+ }
  function init(picker, onChange){
+  refresh=onChange;
   if(!picker)return;
   const buttons=picker.querySelectorAll('[data-language]');
   // Translate only the original HTML. Live status fields are rendered by app.js.
@@ -220,23 +234,19 @@ const controlLocale = (() => {
     staticLabels.push(()=>{target.nodeValue=original.replace(key,t(key));});
    }
   }
-  for(const target of document.querySelectorAll('[aria-label]')){
-   const key=target.getAttribute('aria-label');
-   if(Object.hasOwn(english,key))staticLabels.push(()=>target.setAttribute('aria-label',t(key)));
+  for(const target of document.querySelectorAll('[aria-label], [alt]')){
+   for(const attribute of ['aria-label','alt']){
+    const key=target.getAttribute(attribute);
+    if(Object.hasOwn(english,key))staticLabels.push(()=>target.setAttribute(attribute,t(key)));
+   }
   }
   const title=document.title;
   staticLabels.push(()=>{document.title=t(title);});
   staticLabels.push(()=>{for(const button of buttons)button.setAttribute('aria-pressed',String(button.dataset.language===language));});
   for(const button of buttons)button.addEventListener('click',()=>{
-   if(!['zh-CN','en'].includes(button.dataset.language)||button.dataset.language===language)return;
-   language=button.dataset.language;
-   const address=new URL(location.href);address.searchParams.set('lang',language);
-   history.replaceState(null,'',address);
-   try{localStorage.setItem(storageKey,language);}catch(_){}
-   apply();
-   onChange();
+   if(setLanguage(button.dataset.language))document.dispatchEvent(new Event('easyduck-appearance'));
   });
   apply();
  }
- return {t,error,init,get language(){return language;}};
+ return {t,error,init,setLanguage,get language(){return language;}};
 })();

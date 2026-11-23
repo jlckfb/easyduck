@@ -1,8 +1,8 @@
 <!doctype html>
 <html lang="zh-CN" data-theme="night">
-<head><meta charset="utf-8"><meta name="setup-port" content="__SETUP_PORT__"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><title>Easyduck · 遥控器</title><link rel="stylesheet" href="style.css?v=20261120-state-led"><script src="/navigation-client.js"></script></head>
+<head><meta charset="utf-8"><meta name="setup-port" content="__SETUP_PORT__"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><title>Easyduck · 遥控器</title><script>const pageParams=new URLSearchParams(location.search);if(pageParams.get('view')==='app')document.documentElement.classList.add('app-layout','camera-backdrop');try{if((pageParams.get('theme')||localStorage.getItem('easyduck-theme'))==='day')document.documentElement.dataset.theme='day';}catch(_){}</script><link rel="stylesheet" href="style.css?v=20261123-appearance2"><script src="/navigation-client.js"></script></head>
 <body><div class="wrap">
-<header class="top"><a class="brand" href="/" aria-label="Easyduck 遥控器"><span class="brand-mark">ed<span>·</span></span><span><b>EASYDUCK</b><small>机器人遥控器</small></span></a><nav aria-label="页面切换"><a id="nav-settings">连接设置</a><a id="nav-calibration">标定台</a><div id="control-language" class="language-picker" role="group" aria-label="Language / 语言"><button type="button" data-language="zh-CN" lang="zh-CN" aria-pressed="false">中文</button><button type="button" data-language="en" lang="en" aria-pressed="false">English</button></div><button id="theme-button" type="button">☼ 亮色</button></nav><button class="stop" id="stop">断力 <kbd>Space</kbd></button></header>
+<header class="top"><a class="brand" href="/" aria-label="Easyduck 遥控器"><span class="brand-mark">ed<span>·</span></span><span><b>EASYDUCK</b><small>机器人遥控器</small></span></a><nav aria-label="页面切换"><a id="nav-settings">连接设置</a><a id="nav-calibration">标定台</a><div id="control-language" class="language-picker" role="group" aria-label="Language / 语言"><button type="button" data-language="zh-CN" lang="zh-CN" aria-pressed="false">中文</button><button type="button" data-language="en" lang="en" aria-pressed="false">English</button></div><button id="theme-button" type="button">☼ 亮色</button></nav><details class="portrait-menu"><summary>更多</summary><div class="app-menu-body"></div></details><button class="stop" id="stop">断力 <kbd>Space</kbd></button></header>
 <main>
 <section class="dashboard" aria-label="机器人状态"><div class="robot-status"><span class="status-dot" id="online-dot"></span><div><small id="connection-label">连接中</small><strong id="robot-phase">等待读取状态</strong></div></div><div class="vitals"><div><small>电量</small><strong id="battery">—</strong></div><div><small>IMU</small><strong id="imu">—</strong></div><div><small>当前控制</small><strong id="control-owner">—</strong></div></div></section>
 <section class="control-strip" aria-label="选择控制端"><div><b id="control-guide">正在连接机器人…</b><small>手柄 <span id="pad-connection">—</span> · <span id="control-rule">手柄优先</span></small></div><div class="buttons"><button class="primary" id="use-web">用网页控制</button><button id="use-pad">交还手柄</button></div></section>
@@ -16,8 +16,8 @@
 <div class="gamepad">
 <div class="stick-area"><h2>前后 · 转向</h2><div class="joy" id="joy-left" role="group" aria-label="前后行走、左右转向摇杆"><div class="knob"></div><span class="axis up">前进</span><span class="axis down">后退</span><span class="axis left">左转</span><span class="axis right">右转</span></div><p>松手即停 <span class="key-hint">W S / A D</span></p></div>
 <div class="action-area"><button class="drive-button" data-mode="policy"><span class="button-symbol">▷</span><b>开启行走</b><small>启用行走与倒地恢复</small></button><div class="action-grid"><button id="sit" data-skill="sit_toggle" data-model="posture" hidden><span class="button-symbol">↕</span><b>坐下 / 起立</b></button><button id="pick" data-skill="ground_pick" data-model="ground_pick" hidden><span class="button-symbol">⌄</span><b>捡物</b></button><button id="call" aria-pressed="false"><span class="button-symbol">♪</span><b>按住鸣叫</b><small id="call-level">按得越久，叫声越响</small><span class="call-meter" aria-hidden="true"><i></i></span></button></div><button id="default-pose" class="default-pose" data-mode="hold">默认站姿</button></div>
-<div class="stick-area head-area"><h2>头部 · 上下左右看</h2><div class="joy" id="joy-right" role="group" aria-label="头部上下左右摇杆"><div class="knob"></div><span class="axis up">抬头</span><span class="axis down">低头</span><span class="axis left">左看</span><span class="axis right">右看</span></div><div class="head-controls" id="head-controls"><label>颈部俯仰<input id="head0" type="range" min="-1" max="1" value="0" step="0.02"></label><label>歪头<input id="head3" type="range" min="-1" max="1" value="0" step="0.02"></label></div><button id="head-zero" class="head-zero">头部回中</button></div>
-</div><footer class="controller-foot"><span>先接管网页，再开启行走。离开窗口时移动自动归零。</span><span class="mono">TAISHANPI / HLS1910</span></footer>
+<div class="stick-area head-area"><h2>头部 · 上下左右看</h2><div class="joy" id="joy-right" role="group" aria-label="头部上下左右摇杆"><div class="knob"></div><span class="axis up">抬头</span><span class="axis down">低头</span><span class="axis left">左看</span><span class="axis right">右看</span></div><div class="head-adjustments"><div class="head-controls" id="head-controls"><label>颈部俯仰<input id="head0" type="range" min="-1" max="1" value="0" step="0.02"></label><label>歪头<input id="head3" type="range" min="-1" max="1" value="0" step="0.02"></label></div><button id="head-zero" class="head-zero">头部回中</button></div></div>
+</div><details class="portrait-adjustments"><summary>头部微调</summary></details><footer class="controller-foot"><span>先接管网页，再开启行走。离开窗口时移动自动归零。</span><span class="mono">TAISHANPI / HLS1910</span></footer>
 </section>
 <section class="card battery-led-panel" aria-labelledby="battery-led-title">
 <h2 id="battery-led-title">状态指示灯</h2>
@@ -44,4 +44,56 @@
 </section>
 <section class="secondary"><details class="card" id="diagnostics"><summary><span>详细状态</span><small>关节、策略、标定与日志</small></summary><div class="detail-content"><div class="detail-metrics"><span>状态更新 <b id="rx">—</b></span><span>控制循环 <b id="rl">—</b></span><span>躯干倾角 <b id="tilt-angle">—</b></span></div><p id="mode"></p><p>当前策略 <b id="recovery-phase">—</b></p><p class="model-line">模型 <span id="active-model">—</span></p><p id="recovery-timer"></p><p id="command-health"></p><div class="imu-lines"><p>角速度 <span id="gyro-values">—</span></p><p>重力方向 <span id="gravity-values">—</span></p></div><div class="table"><table><thead><tr><th>舵机 ID</th><th>当前角度 °</th><th>目标角度 °</th></tr></thead><tbody id="joints"></tbody></table></div><p id="calibration-status"></p><details><summary>主控日志</summary><pre id="runtime-log">—</pre></details></div></details></section>
 <p class="footnote">摇杆松手停止移动；“断力”解除支撑，请先托稳机器人。动作名称表示主控阶段，实际效果以实物为准。</p>
-</main></div><script src="i18n.js?v=20261120-state-led"></script><script src="app.js?v=20261109"></script><script src="camera.js?v=20261120"></script><script src="battery-led.js?v=20261120-state-led"></script></body></html>
+</main></div>
+<script>
+if(document.documentElement.classList.contains('app-layout')){
+  const portrait=matchMedia('(max-width:700px) and (orientation:portrait)');
+  const landscape=matchMedia('(orientation:landscape)');
+  const toolbar=document.querySelector('.top');
+  const nav=toolbar.querySelector('nav');
+  const menu=toolbar.querySelector('.portrait-menu');
+  const menuBody=menu.querySelector('.app-menu-body');
+  const head=document.querySelector('.head-area');
+  const adjustments=head.querySelector('.head-adjustments');
+  const extra=document.querySelector('.portrait-adjustments');
+  const main=document.querySelector('main');
+  const controllerFoot=main.querySelector('.controller-foot');
+  const led=main.querySelector('.battery-led-panel');
+  const diagnostics=main.querySelector('.secondary');
+  const footnote=main.querySelector('.footnote');
+  const cameraButton=document.getElementById('camera-toggle');
+  const cameraHeader=cameraButton.parentElement;
+  const controlButtons=main.querySelector('.control-strip .buttons');
+  const syncToolbar=()=>{
+    const merged=landscape.matches&&document.documentElement.classList.contains('merged-toolbar');
+    const destination=merged?controlButtons:cameraHeader;
+    if(cameraButton.parentElement!==destination)destination.append(cameraButton);
+  };
+  const apply=()=>{
+    if(landscape.matches){
+      menuBody.append(nav,extra,led,diagnostics);
+      extra.append(adjustments);
+    }else{
+      controllerFoot.before(extra);
+      footnote.before(led,diagnostics);
+      if(portrait.matches){
+        menu.append(nav);
+        extra.append(adjustments);
+      }else{
+        toolbar.insertBefore(nav,menu);
+        head.append(adjustments);
+      }
+    }
+    menu.open=false;
+    extra.open=false;
+    syncToolbar();
+  };
+  for(const query of [portrait,landscape]){
+    if(query.addEventListener)query.addEventListener('change',apply);
+    else query.addListener(apply);
+  }
+  new MutationObserver(syncToolbar).observe(document.documentElement,{attributes:true,attributeFilter:['class']});
+  apply();
+}
+</script>
+<script src="i18n.js?v=20261123-appearance"></script><script src="app.js?v=20261123-appearance"></script><script src="camera.js?v=20261120"></script><script src="battery-led.js?v=20261120-state-led"></script></body></html>
