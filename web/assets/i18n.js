@@ -74,6 +74,7 @@ const controlLocale = (() => {
   "鸣叫": "Calling",
   "回落中": "Fading",
   "机器人状态读取失败，请检查连接": "Could not read robot status. Check the connection.",
+  "机器人状态读取超时，请检查连接": "Robot status timed out. Check the connection.",
   "网页": "Web",
   "等待连接": "Waiting for connection",
   "已连接": "Connected",

@@ -19,14 +19,14 @@ controlLocale.init($('control-language'),()=>{
 });
 try{setTheme(localStorage.getItem('easyduck-theme')||'night');}catch(_){setTheme('night');}
 $('theme-button').onclick=()=>setTheme(document.documentElement.dataset.theme==='day'?'night':'day');
-let statusBusy=false, commandBusy=false, commandPending=false;
+let statusBusy=false, commandRequest=null, commandPending=false, commandSequence=0;
 const controlId=globalThis.crypto?.randomUUID?.()||`${Date.now()}-${Math.random().toString(16).slice(2)}`;
 let controlGeneration=null, webAllowed=false;
 function resetInput(){keys.clear();cancelCall();for(const i of [0,3])$('head'+i).value=0;zero();}
-$('use-web').onclick=async()=>{try{resetInput();await post('command',{twist:[0,0,0],head:[0,0,0,0],mouth:0});await post('control',{preference:'web'});}catch(e){showError(e);}};
+$('use-web').onclick=async()=>{try{resetInput();await postCommand({twist:[0,0,0],head:[0,0,0,0],mouth:0});await post('control',{preference:'web'});}catch(e){showError(e);}};
 $('use-pad').onclick=async()=>{try{resetInput();await post('control',{preference:'auto'});}catch(e){showError(e);}};
 function releasePage(){return fetch('/api/release',{method:'POST',keepalive:true,headers:{'Content-Type':'application/json','X-Control-Id':controlId},body:'{}'}).catch(()=>{});}
-async function post(path, body){const r=await fetch('/api/'+path,{method:'POST',headers:{'Content-Type':'application/json','X-Control-Id':controlId},body:JSON.stringify(body)});const x=await r.json();if(!r.ok)throw new Error(x.detail||'请求未完成，请重试');return x;}
+async function post(path, body, {signal, sequence}={}){const headers={'Content-Type':'application/json','X-Control-Id':controlId};if(sequence!=null)headers['X-Control-Sequence']=String(sequence);const r=await fetch('/api/'+path,{method:'POST',headers,body:JSON.stringify(body),signal});const x=await r.json();if(!r.ok)throw new Error(x.detail||'请求未完成，请重试');return x;}
 let noticeUntil=0,skillBusy=false,currentNotice=null;
 function renderNotice(){
  if(Date.now()>noticeUntil||!currentNotice)return;
@@ -58,13 +58,26 @@ function updateMotion(){
     0, keys.has('a')||keys.has('d')?key('a','d')*.5:deadzone(-sticks.left.x)];
   motion=motion.map(value=>value*Number($('speed').value)/100);
 }
-async function sendCommand(){
+async function postCommand(body, request=new AbortController()){
+  const timer=setTimeout(()=>request.abort(),500);
+  try{return await post('command',body,{signal:request.signal,sequence:++commandSequence});}
+  finally{clearTimeout(timer);}
+}
+async function sendCommand(priority=false){
   if(pageClosing)return;
-  if(commandBusy){commandPending=true;return;}
-  commandBusy=true;commandPending=false;
-  try{await post('command',{twist:[...motion],head:[+$('head0').value,-deadzone(sticks.right.y),-deadzone(sticks.right.x),+$('head3').value],mouth:callLevel*30,vocal:callHeld?callLevel:0});}
-  catch(e){showError(e);}
-  finally{commandBusy=false;if(commandPending)sendCommand();}
+  if(commandRequest&&!priority){commandPending=true;return;}
+  const previous=commandRequest;
+  const request=new AbortController();
+  commandRequest=request;commandPending=false;
+  previous?.abort();
+  try{await postCommand({twist:[...motion],head:[+$('head0').value,-deadzone(sticks.right.y),-deadzone(sticks.right.x),+$('head3').value],mouth:callLevel*30,vocal:callHeld?callLevel:0},request);}
+  catch(e){if(commandRequest===request&&e.name!=='AbortError')showError(e);}
+  finally{
+    if(commandRequest===request){
+      commandRequest=null;
+      if(commandPending)sendCommand();
+    }
+  }
 }
 function joystick(id,side){
   const zone=$(id),knob=zone.firstElementChild;
@@ -86,11 +99,11 @@ function joystick(id,side){
   }
   zone.onpointerdown=e=>{if(!webAllowed||pointer!==null||e.button!==0)return;e.preventDefault();pointer=e.pointerId;zone.setPointerCapture(pointer);move(e);sendCommand();};
   zone.onpointermove=e=>{if(e.pointerId===pointer)move(e);};
-  const release=e=>{if(e.pointerId!==pointer)return;reset();updateMotion();sendCommand();};
+  const release=e=>{if(e.pointerId!==pointer)return;reset();updateMotion();sendCommand(true);};
   zone.onpointerup=zone.onpointercancel=zone.onlostpointercapture=release;
 }
 joystick('joy-left','left');joystick('joy-right','right');
-function zero(){cancelCall();keys.clear();resetSticks.forEach(reset=>reset());updateMotion();sendCommand();}
+function zero(){cancelCall();keys.clear();resetSticks.forEach(reset=>reset());updateMotion();sendCommand(true);}
 let callPointer=null,callHeld=false,callLevel=0,callTick=performance.now();
 function renderCall(){
  $('call').setAttribute('aria-pressed',String(callHeld));
@@ -116,9 +129,12 @@ setInterval(()=>{const now=performance.now(),dt=Math.min((now-callTick)/1000,.1)
 },50);
 function keyCommand(){updateMotion();sendCommand();}
 window.addEventListener('keydown',e=>{if(['INPUT','TEXTAREA','SELECT','BUTTON'].includes(e.target.tagName)||e.target.isContentEditable)return;if(e.code==='Space'){e.preventDefault();$('stop').click();return;}const k=e.key.toLowerCase();if(webAllowed&&'wasd'.includes(k)&&k.length===1){e.preventDefault();keys.add(k);keyCommand();}});
-window.addEventListener('keyup',e=>{const k=e.key.toLowerCase();if(keys.delete(k))keyCommand();});
+window.addEventListener('keyup',e=>{const k=e.key.toLowerCase();if(keys.delete(k)){updateMotion();sendCommand(true);}});
 window.addEventListener('blur',()=>{keys.clear();zero();});
-document.addEventListener('visibilitychange',()=>{if(document.hidden)zero();});
+document.addEventListener('visibilitychange',()=>{
+  if(document.hidden){zero();closeStatusStream();}
+  else openStatusStream();
+});
 let controlSocket=null,pageClosing=false;
 function connectControl(){
   if(pageClosing)return;
@@ -127,14 +143,37 @@ function connectControl(){
   controlSocket=socket;
   socket.onclose=()=>{if(!pageClosing&&controlSocket===socket)setTimeout(connectControl,500);};
 }
-window.addEventListener('pagehide',()=>{pageClosing=true;releasePage();controlSocket?.close();});
-window.addEventListener('pageshow',()=>{if(pageClosing){pageClosing=false;connectControl();}});
+window.addEventListener('pagehide',()=>{pageClosing=true;closeStatusStream();releasePage();controlSocket?.close();});
+window.addEventListener('pageshow',()=>{if(pageClosing){pageClosing=false;connectControl();openStatusStream();}});
 connectControl();
-setInterval(()=>{if(!pageClosing&&!document.hidden&&!commandBusy)sendCommand();},50);
+setInterval(()=>{if(!pageClosing&&!document.hidden&&!commandRequest)sendCommand();},50);
+let statusStream=null, streamedStatus=null, streamedAt=-Infinity;
+function openStatusStream(){
+  if(pageClosing||document.hidden||statusStream||typeof EventSource!=='function')return;
+  const source=new EventSource(`/api/status-stream?client=${encodeURIComponent(controlId)}`);
+  statusStream=source;
+  source.onmessage=event=>{
+    if(source!==statusStream)return;
+    streamedStatus=JSON.parse(event.data);
+    streamedAt=performance.now();
+  };
+}
+function closeStatusStream(){
+  statusStream?.close();
+  statusStream=null;streamedStatus=null;streamedAt=-Infinity;
+}
+openStatusStream();
 // Display only telemetry fields provided by robotd.
 // Missing counters or per-servo torque remain unknown.
-setInterval(async()=>{if(statusBusy||document.hidden)return;statusBusy=true;try{
-const r=await fetch('/api/status',{headers:{'X-Control-Id':controlId},signal:AbortSignal.timeout(2500)});if(!r.ok)throw new Error('机器人状态读取失败，请检查连接');const s=await r.json();
+setInterval(async()=>{if(statusBusy||document.hidden)return;statusBusy=true;
+const statusAbort=new AbortController(),statusTimer=setTimeout(()=>statusAbort.abort(),2500);
+try{
+let s=streamedStatus;
+if(!s||performance.now()-streamedAt>1000){
+  const r=await fetch('/api/status',{headers:{'X-Control-Id':controlId},signal:statusAbort.signal});
+  if(!r.ok)throw new Error('机器人状态读取失败，请检查连接');
+  s=await r.json();
+}
 const fresh=s.feedback_age_ms!=null&&s.feedback_age_ms<1500&&!s.connection_error;
 const control=s.control||{};
 if(controlGeneration!==control.generation){resetInput();controlGeneration=control.generation;}
@@ -188,7 +227,7 @@ $('calibration-status').textContent=t('标定状态：{status} · 文件 {file} 
  error:cal.error?' · '+translateError(cal.error):''
 });
 $('calibration-status').className=cal.state==='applied'?'hint':'warn';
-}catch(e){webAllowed=false;resetInput();$('online-dot').classList.remove('online');$('connection-label').textContent=t('连接中断');$('control-guide').textContent=t('等待机器人重新连接');for(const b of document.querySelectorAll('[data-mode],[data-skill],#call'))b.disabled=true;showError(e);}finally{statusBusy=false;}},250);
+}catch(e){webAllowed=false;resetInput();$('online-dot').classList.remove('online');$('connection-label').textContent=t('连接中断');$('control-guide').textContent=t('等待机器人重新连接');for(const b of document.querySelectorAll('[data-mode],[data-skill],#call'))b.disabled=true;showError(e.name==='AbortError'?new Error('机器人状态读取超时，请检查连接'):e);}finally{clearTimeout(statusTimer);statusBusy=false;}},250);
 
 function navigationURL(target){
  const url=new URL('/navigate',location.href);url.port=document.querySelector('meta[name="setup-port"]').content;url.searchParams.set('target',target);url.searchParams.set('source','control');url.searchParams.set('lang',controlLocale.language);return url.href;

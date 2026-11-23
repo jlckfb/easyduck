@@ -259,6 +259,24 @@ class Gateway:
         self.neutral = True
         self.preference = 'auto'
         self.connection_token = None
+        self.control_error = (None, '')
+        self.command_order = (None, 0)
+
+    def poll_control(self, rpc):
+        current = self.control
+        try:
+            control = rpc.call('robot.control.status')
+            error = ''
+        except ApiError as exc:
+            legacy = 'unknown method' in str(exc)
+            control = self.local_control() if legacy else {}
+            error = '' if legacy else str(exc)
+        # A heartbeat or action may already have refreshed ownership during this read.
+        with self.lock:
+            if self.control is current:
+                if not error:
+                    self.update_control(control)
+                self.control_error = (self.control, error)
 
     def open_connection(self, client, token):
         with self.lock:
@@ -338,7 +356,7 @@ class Gateway:
             self.control = self.local_control()
         return True
 
-    def request(self, route, body, client):
+    def request(self, route, body, client, sequence=None):
         if not isinstance(body, dict):
             raise ApiError('需要JSON对象')
         with self.lock:
@@ -395,8 +413,14 @@ class Gateway:
                 if mouth < 0:
                     raise ApiError('嘴部角度范围为0～30')
                 neutral = all(abs(x)<1e-6 for x in twist+head+[mouth,vocal])
+                if sequence is not None:
+                    previous_client, previous_sequence = self.command_order
+                    if client == previous_client and sequence <= previous_sequence:
+                        return {'ok':True,'forwarded':False}
                 if not self.presence(client,neutral):
                     return {'ok':True,'forwarded':False}
+                if sequence is not None:
+                    self.command_order = (client, sequence)
                 if self.control.get('owner') != 'web' or not self.control.get('ready') or self.owner != client:
                     return {'ok':True,'forwarded':False}
                 self.rpc.call('robot.xgo.command', {'twist':twist,'head':head,'mouth':mouth/30})
@@ -463,44 +487,41 @@ class Gateway:
                         self.last_error = str(exc)
 
     def status(self, client):
-        with self.lock:
-            try:
-                self.update_control(self.rpc.call('robot.control.status'))
-            except ApiError as exc:
-                if 'unknown method' not in str(exc):
-                    self.last_error = str(exc)
-                else:
-                    self.control = self.local_control()
-            view = self.snapshot.view()
-            state, health, models = view['state'], view['health'], view['models']
-            gravity = state.get('safety', {}).get('gravity')
-            policy = state.get('policy')
-            angle = None
-            if gravity and math.sqrt(sum(v*v for v in gravity)) > 0:
-                angle = math.degrees(math.acos(max(-1, min(1,
-                    -gravity[2] / math.sqrt(sum(v*v for v in gravity))))))
-            return {**view, 'control': self.control, 'this_page': client==self.session, 'mode': self.mode, 'enabled': state.get('enabled'),
-                    'feedback_hz': view['received_hz'], 'inference_hz': None,
-                    'loop_hz': state.get('loop', {}).get('hz'), 'servo_ids': None,
-                    'imu_ok': health.get('imu', {}).get('ready'),
-                    'feedback_age_ms': view['state_age_s'] * 1000 if view['state_age_s'] is not None else None,
-                    'last_error': view['connection_error'] or self.last_error,
-                    'command': self.command, 'head': self.head, 'mouth': self.mouth,
-                    'motors': IDS, 'angles': [math.degrees(x) for x in state.get('joints', [])],
-                    'targets': [math.degrees(x) for x in state.get('targets', [])],
-                    'gyro': state.get('safety', {}).get('base_ang_vel'), 'gravity': gravity,
-                    'acc': None, 'recovery': {'active': policy in ('xgo_getup', 'xgo_default_pose'), 'phase': policy, 'angle_deg': angle},
-                    'pick': {'active': policy == 'xgo_pick'}, 'roulade': {'active': policy == 'xgo_roulade'},
-                    'active_model': models.get('posture') if policy in ('xgo_sit', 'xgo_rise') else
-                                    models.get('roulade') if policy == 'xgo_roulade' else
-                                    models.get('jump') if policy == 'xgo_jump' else
-                                    models.get('ground_pick') if policy == 'xgo_pick' else
-                                    models.get('sitstand') if policy in ('xgo_getup','xgo_default_pose') else
-                                    models.get('walk') if policy == 'xgo_walk' else
-                                    models.get('stand') if policy == 'stand' else None,
-                    'last_request': self.last_request, 'web_active': self.owner is not None,
-                    'backend': 'xgoduck control flow in robotd; TaishanPi 1910 hardware', 'torque': None,
-                    'calibration': self.calibration.view()}
+        control = self.control
+        sampled, error = self.control_error
+        if sampled is not control:
+            error = ''
+        view = self.snapshot.view()
+        state, health, models = view['state'], view['health'], view['models']
+        gravity = state.get('safety', {}).get('gravity')
+        policy = state.get('policy')
+        angle = None
+        if gravity and math.sqrt(sum(v*v for v in gravity)) > 0:
+            angle = math.degrees(math.acos(max(-1, min(1,
+                -gravity[2] / math.sqrt(sum(v*v for v in gravity))))))
+        return {**view, 'control': control, 'this_page': client==self.session, 'mode': self.mode, 'enabled': state.get('enabled'),
+                'feedback_hz': view['received_hz'], 'inference_hz': None,
+                'loop_hz': state.get('loop', {}).get('hz'), 'servo_ids': None,
+                'imu_ok': health.get('imu', {}).get('ready'),
+                'feedback_age_ms': view['state_age_s'] * 1000 if view['state_age_s'] is not None else None,
+                'last_error': view['connection_error'] or error or self.last_error,
+                'command': self.command, 'head': self.head, 'mouth': self.mouth,
+                'motors': IDS, 'angles': [math.degrees(x) for x in state.get('joints', [])],
+                'targets': [math.degrees(x) for x in state.get('targets', [])],
+                'gyro': state.get('safety', {}).get('base_ang_vel'), 'gravity': gravity,
+                'acc': None, 'recovery': {'active': policy in ('xgo_getup', 'xgo_default_pose'), 'phase': policy, 'angle_deg': angle},
+                'pick': {'active': policy == 'xgo_pick'}, 'roulade': {'active': policy == 'xgo_roulade'},
+                'active_model': models.get('posture') if policy in ('xgo_sit', 'xgo_rise') else
+                                models.get('roulade') if policy == 'xgo_roulade' else
+                                models.get('jump') if policy == 'xgo_jump' else
+                                models.get('ground_pick') if policy == 'xgo_pick' else
+                                models.get('sitstand') if policy in ('xgo_getup','xgo_default_pose') else
+                                models.get('walk') if policy == 'xgo_walk' else
+                                models.get('stand') if policy == 'stand' else None,
+                'last_request': self.last_request, 'web_active': self.owner is not None,
+                'backend': 'xgoduck control flow in robotd; TaishanPi 1910 hardware', 'torque': None,
+                'calibration': self.calibration.cached or {},
+                'connection_error': view['connection_error'] or error}
 
 
 def background(gateway, path, stop):
@@ -533,12 +554,23 @@ def background(gateway, path, stop):
                     snap.error = str(exc)
                 stop.wait(1)
 
+    def poll_control():
+        rpc = Rpc(path)
+        try:
+            while not stop.is_set():
+                gateway.poll_control(rpc)
+                stop.wait(.25)
+        finally:
+            rpc.close()
+
     threading.Thread(target=subscribe, name='robot-state', daemon=True).start()
+    threading.Thread(target=poll_control, name='control-status', daemon=True).start()
     next_poll = 0.0
     while not stop.wait(.1):
         gateway.expire()
         if time.monotonic() >= next_poll:
             next_poll = time.monotonic() + 2
+            gateway.calibration.view()
             try:
                 health = health_rpc.call('robot.health')
                 with snap.lock:
@@ -561,8 +593,22 @@ def make_handler(gateway):
             if self.command == 'POST':
                 print(f'{self.address_string()} {self.path} {args[1] if len(args)>1 else ""}', flush=True)
 
+        def handle_one_request(self):
+            # Keep the existing HTTP behavior for routes that do not opt into reuse.
+            self.protocol_version = 'HTTP/1.0'
+            super().handle_one_request()
+
         def reply(self, value, status=200, mime='application/json; charset=utf-8'):
             data = value if isinstance(value, bytes) else dumps(value).encode()
+            route = (self.command, urlsplit(self.path).path)
+            connection = self.headers.get('Connection', '').lower().split(',')
+            if (status == 200 and self.request_version == 'HTTP/1.1'
+                    and route in {('GET', '/api/status'), ('POST', '/api/command')}
+                    and not self.headers.get('Transfer-Encoding')
+                    and not any(token.strip() == 'close' for token in connection)):
+                self.protocol_version = 'HTTP/1.1'
+                self.close_connection = False
+                self.connection.settimeout(3)
             self.send_response(status)
             self.send_header('Content-Type', mime)
             self.send_header('Content-Length', str(len(data)))
@@ -596,6 +642,8 @@ def make_handler(gateway):
                 return self.camera_stream()
             if route == '/api/status':
                 return self.reply(gateway.status(self.headers.get('X-Control-Id', '')))
+            if route == '/api/status-stream':
+                return self.status_stream()
             file = {'/': ('index.html', 'text/html; charset=utf-8'),
                     '/battery-led.js': ('battery-led.js', 'text/javascript; charset=utf-8'),
                     '/camera.js': ('camera.js', 'text/javascript; charset=utf-8'),
@@ -639,6 +687,25 @@ def make_handler(gateway):
                         pass
             finally:
                 camera_lock.release()
+
+        def status_stream(self):
+            client = parse_qs(urlsplit(self.path).query).get('client', [''])[0]
+            if not client or len(client) > 80:
+                return self.reply({'detail': '控制页面标识无效，请刷新页面'}, 400)
+            self.close_connection = True
+            self.connection.settimeout(3)
+            try:
+                self.send_response(200)
+                self.send_header('Content-Type', 'text/event-stream; charset=utf-8')
+                self.send_header('Cache-Control', 'no-store')
+                self.send_header('Connection', 'close')
+                self.end_headers()
+                while True:
+                    payload = dumps(gateway.status(client))
+                    self.wfile.write(f'data: {payload}\n\n'.encode('utf-8'))
+                    time.sleep(.25)
+            except (OSError, ApiError):
+                pass
 
         def control_connection(self):
             """A native ping/pong lease; no JavaScript timer or motion messages required."""
@@ -747,7 +814,12 @@ def make_handler(gateway):
                 if path not in ('/api/mode', '/api/command', '/api/pick', '/api/skill', '/api/control', '/api/release'):
                     raise ApiError('接口不存在', 404)
                 body = json.loads(self.rfile.read(size))
-                result = gateway.request(path[5:], body, client)
+                sequence = None
+                if path == '/api/command' and (value := self.headers.get('X-Control-Sequence')) is not None:
+                    if not value.isascii() or not value.isdecimal() or len(value) > 16 or int(value) == 0:
+                        raise ApiError('指令序号无效')
+                    sequence = int(value)
+                result = gateway.request(path[5:], body, client, sequence)
                 self.reply(result)
             except (ValueError, ApiError) as exc:
                 with gateway.lock:
