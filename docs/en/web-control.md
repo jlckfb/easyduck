@@ -45,6 +45,12 @@ gradle -p android :app:assembleDebug
 
 The output is `android/app/build/outputs/apk/debug/app-debug.apk`. The same APK can connect to different ducks running the Android intercom service.
 
+## Voice intercom
+
+On expansion boards with a microphone, open the controller using the device’s HTTPS hostname. In **语音对讲** (Voice intercom), enter your connection setup credentials, tap **开启对讲** (Start intercom), and allow microphone access. Hold the talk button to play your voice through the duck's speaker. Release it to hear the duck's surroundings again. Closing the intercom or leaving the page stops capture.
+
+Audio is streamed between the phone and TaishanPi without saving a recording. The intercom shares the speaker with the original sounds. Once a publicly trusted certificate and hostname are configured on the board, the HTTP controller links to the HTTPS controller. Phones use their built-in certificate trust to open it.
+
 ## RGB status indicator
 
 Use the **状态指示灯** (Status indicator) section to turn the WS2812B light on or off, adjust brightness and battery breathing speed, and see the current pattern. The light defaults to on, at 70% brightness and the fastest battery breathing speed (level 5). The speed setting applies only to the green, yellow, and red battery breathing patterns.

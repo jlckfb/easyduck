@@ -19,6 +19,22 @@
 <div class="stick-area head-area"><h2>头部 · 上下左右看</h2><div class="joy" id="joy-right" role="group" aria-label="头部上下左右摇杆"><div class="knob"></div><span class="axis up">抬头</span><span class="axis down">低头</span><span class="axis left">左看</span><span class="axis right">右看</span></div><div class="head-adjustments"><div class="head-controls" id="head-controls"><label>颈部俯仰<input id="head0" type="range" min="-1" max="1" value="0" step="0.02"></label><label>歪头<input id="head3" type="range" min="-1" max="1" value="0" step="0.02"></label></div><button id="head-zero" class="head-zero">头部回中</button></div></div>
 </div><details class="portrait-adjustments"><summary>头部微调</summary></details><footer class="controller-foot"><span>先接管网页，再开启行走。离开窗口时移动自动归零。</span><span class="mono">TAISHANPI / HLS1910</span></footer>
 </section>
+<section class="card intercom-panel" aria-labelledby="intercom-title">
+<h2 id="intercom-title">语音对讲</h2>
+<p id="intercom-status" role="status"></p>
+<a id="intercom-https" hidden>通过 HTTPS 打开遥控页</a>
+<form id="intercom-login" method="post" class="intercom-actions" hidden>
+<label>账号 <input id="intercom-user" name="username" autocomplete="username" required></label>
+<label>密码 <input id="intercom-password" name="password" type="password" autocomplete="current-password" required></label>
+<button id="intercom-open" type="submit">开启对讲</button>
+</form>
+<div class="intercom-actions">
+<button id="intercom-talk" type="button" disabled>按住说话，松开收听</button>
+<button id="intercom-close" type="button" hidden>关闭对讲</button>
+<button id="intercom-output" type="button" disabled>选择扬声器</button>
+<p id="intercom-output-status" role="status"></p>
+</div>
+</section>
 <section class="card battery-led-panel" aria-labelledby="battery-led-title">
 <h2 id="battery-led-title">状态指示灯</h2>
 <div class="battery-led-controls">
@@ -96,4 +112,4 @@ if(document.documentElement.classList.contains('app-layout')){
   apply();
 }
 </script>
-<script src="i18n.js?v=20261123-appearance"></script><script src="app.js?v=20261123-appearance"></script><script src="camera.js?v=20261120"></script><script src="battery-led.js?v=20261120-state-led"></script></body></html>
+<script src="i18n.js?v=20261123-appearance"></script><script src="app.js?v=20261123-appearance"></script><script src="camera.js?v=20261120"></script><script src="battery-led.js?v=20261120-state-led"></script><script src="intercom.js?v=20261120-speaker-picker"></script></body></html>

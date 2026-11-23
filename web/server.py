@@ -14,9 +14,11 @@ import sys as _network_sys
 _network_root = Path(__file__).resolve().parents[1]
 if not (_network_root / 'deploy/network_routes.py').is_file(): _network_root = _network_root.parent
 _network_sys.path.insert(0, str(_network_root))
+from deploy.local_auth import Auth, default_user
 from deploy.network_routes import addresses as network_addresses, client_script as navigation_client
 import signal
 import socket
+import ssl
 import subprocess
 import tempfile
 import threading
@@ -25,8 +27,10 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit, parse_qs
 
 try:
+    from .intercom import Intercom, IntercomError, PACKET
     from .usb_camera import capture_frames
 except ImportError:
+    from intercom import Intercom, IntercomError, PACKET
     from usb_camera import capture_frames
 
 IDS = [20, 21, 22, 23, 24, 30, 31, 32, 33, 34, 10, 11, 12, 13, 14]
@@ -584,13 +588,13 @@ def background(gateway, path, stop):
                     snap.error = str(exc)
 
 
-def make_handler(gateway):
+def make_handler(gateway, intercom=None, https_port=0, https_host=None):
     camera_lock = threading.Lock()
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, fmt, *args):
             # Frequent status requests are not user actions; omit body/headers from logs.
-            if self.command == 'POST':
+            if self.command == 'POST' and not self.path.startswith('/api/intercom/'):
                 print(f'{self.address_string()} {self.path} {args[1] if len(args)>1 else ""}', flush=True)
 
         def handle_one_request(self):
@@ -619,6 +623,9 @@ def make_handler(gateway):
 
         def do_GET(self):
             route = urlsplit(self.path).path
+            if route == '/api/intercom':
+                return self.reply({'enabled': intercom is not None,
+                                   'httpsPort': https_port, 'httpsHost': https_host})
             if route == '/api/network-addresses':
                 return self.reply(network_addresses())
             if route == '/navigation-client.js':
@@ -647,6 +654,8 @@ def make_handler(gateway):
             file = {'/': ('index.html', 'text/html; charset=utf-8'),
                     '/battery-led.js': ('battery-led.js', 'text/javascript; charset=utf-8'),
                     '/camera.js': ('camera.js', 'text/javascript; charset=utf-8'),
+                    '/intercom.js': ('intercom.js', 'text/javascript; charset=utf-8'),
+                    '/intercom-worklet.js': ('intercom-worklet.js', 'text/javascript; charset=utf-8'),
                     '/app.js': ('app.js', 'text/javascript; charset=utf-8'),
                     '/i18n.js': ('i18n.js', 'text/javascript; charset=utf-8'),
                     '/style.css': ('style.css', 'text/css; charset=utf-8')}.get(route)
@@ -796,7 +805,49 @@ def make_handler(gateway):
                 return self.reply({'detail': 'Could not save LED settings'}, 500)
             return self.reply(body)
 
+        def intercom_request(self, route):
+            parts = urlsplit(self.headers.get('Origin', ''))
+            if (not intercom or not isinstance(self.connection, ssl.SSLSocket)
+                    or parts.scheme != 'https' or parts.netloc != self.headers.get('Host')
+                    or self.headers.get('Sec-Fetch-Site') in ('cross-site', 'same-site')):
+                self.close_connection = True
+                return self.reply({'detail': 'intercom_https_required'}, 403)
+            try:
+                size = int(self.headers.get('Content-Length', '0'))
+                is_login = route == '/api/intercom/open'
+                mode = route.rsplit('/', 1)[-1]
+                if is_login:
+                    valid = self.headers.get_content_type() == 'application/json' and 0 < size <= 4096
+                else:
+                    valid = (mode in ('listen', 'talk', 'close')
+                             and self.headers.get_content_type() == 'application/octet-stream'
+                             and (size == 0 or (mode == 'talk' and 0 < size <= PACKET and size % 2 == 0)))
+                if not valid:
+                    self.close_connection = True
+                    return self.reply({'detail': 'intercom_invalid'}, 400)
+                data = self.rfile.read(size)
+                if len(data) != size:
+                    raise ValueError('incomplete audio body')
+                if self.request_version == 'HTTP/1.1' and self.headers.get('Connection', '').lower() != 'close':
+                    self.protocol_version = 'HTTP/1.1'
+                    self.close_connection = False
+                if is_login:
+                    body = json.loads(data)
+                    if not isinstance(body, dict):
+                        raise ValueError('invalid login body')
+                    return self.reply({'token': intercom.open(body.get('username'), body.get('password'))})
+                output = intercom.exchange(self.headers.get('X-Intercom-Token', ''), mode, data)
+                return self.reply(output, mime='application/octet-stream')
+            except IntercomError as exc:
+                return self.reply({'detail': str(exc)}, exc.status)
+            except (ValueError, UnicodeError):
+                self.close_connection = True
+                return self.reply({'detail': 'intercom_invalid'}, 400)
+
         def do_POST(self):
+            route = urlsplit(self.path).path
+            if route.startswith('/api/intercom/'):
+                return self.intercom_request(route)
             if urlsplit(self.path).path == '/api/battery-led':
                 return self.write_battery_led()
             try:
@@ -834,6 +885,20 @@ def make_handler(gateway):
     return Handler
 
 
+class HttpsServer(ThreadingHTTPServer):
+    def __init__(self, address, handler, context):
+        self.context = context
+        super().__init__(address, handler)
+
+    def finish_request(self, request, address):
+        request.settimeout(5)
+        try:
+            with self.context.wrap_socket(request, server_side=True) as encrypted:
+                super().finish_request(encrypted, address)
+        except (OSError, ssl.SSLError):
+            pass
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--host', default='0.0.0.0')
@@ -842,7 +907,29 @@ def main():
     args = parser.parse_args()
     stop = threading.Event()
     gateway = Gateway(Rpc(args.socket), Snapshot())
-    server = ThreadingHTTPServer((args.host, args.port), make_handler(gateway))
+    intercom = https = None
+    https_port = 0
+    handler = None
+    certificate = os.environ.get('EASYDUCK_INTERCOM_CERT')
+    key = os.environ.get('EASYDUCK_INTERCOM_KEY')
+    https_host = os.environ.get('EASYDUCK_INTERCOM_HOST')
+    if certificate and key and https_host:
+        try:
+            context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            context.minimum_version = ssl.TLSVersion.TLSv1_2
+            context.load_cert_chain(certificate, key)
+            https_port = int(os.environ.get('EASYDUCK_INTERCOM_PORT', '9443'))
+            intercom = Intercom(Auth(os.environ.get('EASYDUCK_SETUP_USER', default_user())))
+            handler = make_handler(gateway, intercom, https_port, https_host)
+            https = HttpsServer((args.host, https_port), handler, context)
+            threading.Thread(target=https.serve_forever, daemon=True).start()
+        except (OSError, ValueError) as exc:
+            print(f'Intercom HTTPS unavailable: {exc}', flush=True)
+            if intercom:
+                intercom.shutdown()
+            intercom = handler = None
+            https_port = 0
+    server = ThreadingHTTPServer((args.host, args.port), handler or make_handler(gateway))
     server.daemon_threads = True
     threading.Thread(target=background, args=(gateway, args.socket, stop), daemon=True).start()
 
@@ -857,6 +944,11 @@ def main():
         server.serve_forever(poll_interval=.2)
     finally:
         stop.set()
+        if https:
+            https.shutdown()
+            https.server_close()
+        if intercom:
+            intercom.shutdown()
         with gateway.lock:
             if gateway.session is not None:
                 try:

@@ -52,7 +52,7 @@ def mapping(profile, binaries):
             raise ValueError('Model checksum mismatch: ' + name)
         result.append((source, Path('opt/robot/daemon/policies') / name))
 
-    for name in ('network_routes.py', 'navigation-client.js'):
+    for name in ('network_routes.py', 'navigation-client.js', 'local_auth.py'):
         result.append((ROOT / 'deploy' / name, Path('opt/robot/deploy') / name))
     for name in ('server.py', 'usb_camera.py', 'intercom.py', 'intercom_stream.py',
                  'android_intercom.py', 'requirements-intercom.txt'):
