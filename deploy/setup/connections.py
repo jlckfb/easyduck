@@ -370,12 +370,28 @@ class Backend:
             raise SetupError('invalid_action', '不支持的手柄操作。')
         return {'message': message, 'bluetooth': self.bluetooth_status()}
 
+    def reconnects_from_device(self, address):
+        code, paths, _ = run(['busctl', '--list', 'tree', 'org.bluez'], 2)
+        if code:
+            return False
+        suffix = '/dev_' + address.replace(':', '_')
+        for path in paths.splitlines():
+            if path.endswith(suffix):
+                code, value, _ = run(['busctl', 'get-property', 'org.bluez', path,
+                                      'org.bluez.Input1', 'ReconnectMode'], 2)
+                return code == 0 and value == 's "device"'
+        return False
+
     def reconnect_once(self):
         if not self.adapter()['available']:
             return
         for device in self.devices():
             entry = self.enrolled().get(device['address'])
             if not entry or entry.get('pause_boot') == self.boot_id() or device['connected'] or not (device['paired'] and device['trusted']):
+                continue
+            # These HID controllers initiate reconnect when woken. Paging a sleeping
+            # controller from the host can interrupt traffic on the shared 2.4 GHz radio.
+            if self.reconnects_from_device(device['address']):
                 continue
             self.gamepad('connect', address=device['address'])
             break
