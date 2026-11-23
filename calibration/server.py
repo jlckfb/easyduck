@@ -21,7 +21,7 @@ import time
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
 from calibration_math import *
-from hardware import Bus,MockBus
+from hardware import Bus,MockBus,ServoTimeout
 import imu_settings
 from servo_setup import ServoSetup
 from motion import MotionCoordinator,COUNT_DEG
@@ -84,7 +84,7 @@ class App:
         self.saved=json.loads(Path(args.profile).read_text()) if Path(args.profile).exists() else baseline
         validate_profile(self.saved)
         self.profile=copy.deepcopy(self.saved); self.revision=0
-        self.rows={}; self.imu=None; self.samples={}; self.history=[]; self.hz=0
+        self.rows={}; self.servo_retry_at={}; self.imu=None; self.samples={}; self.history=[]; self.hz=0
         self.imu_config=({'source':'i2c','model':'lsm6dsv16x','i2c_dev':'/dev/i2c-2','i2c_addr':107,
                           'fusion':'sflp','lever_arm':[0,0,0],'g_filter_k':.05,'accel_trust_g':.3} if args.mock
                          else configuration(getattr(args,'config','/etc/robot/robotd.toml')))
@@ -102,6 +102,14 @@ class App:
         elif not args.mock:self.imu_status['error']='标定台需要 source=i2c；当前配置为 bus'
         self.thread=threading.Thread(target=self.poll,daemon=True); self.thread.start()
 
+    def poll_ids(self, now):
+        # Reserve one probe per round for absent or newly attached servos.
+        ready = [sid for sid in IDS if sid in self.rows and sid not in self.servo_retry_at]
+        probes = [sid for sid in IDS if sid not in ready and self.servo_retry_at.get(sid,0)<=now]
+        if probes:
+            ready.append(min(probes,key=lambda sid:self.servo_retry_at.get(sid,0)))
+        return ready
+
     def read_row(self,sid):
         try:
             b=self.bus.read(sid,56,15)
@@ -115,8 +123,14 @@ class App:
             self.rows[sid]={'count':p,'position_raw':raw_position,'position_signed':Bus.signed_position(raw_position),
                 'torque':bool(torque),'voltage':b[6]/10,'temperature':b[7],
                 'current_raw':current,'current_ma':current*6.5,'at':time.monotonic(),'error':None}
+            self.servo_retry_at.pop(sid,None)
         except Exception as e:
-            self.rows[sid]={'count':None,'torque':None,'at':time.monotonic(),'error':str(e)}
+            now=time.monotonic()
+            if isinstance(e,ServoTimeout):
+                self.servo_retry_at[sid]=now+1
+            else:
+                self.servo_retry_at.pop(sid,None)
+            self.rows[sid]={'count':None,'torque':None,'at':now,'error':str(e)}
 
     def update_imu(self):
         self.reader.set_calibration(imu_calibration(self.profile,self.imu_config['model']))
@@ -138,7 +152,7 @@ class App:
                 id_mode=self.id_setup.active
                 if id_mode:self.id_setup.tick()
                 job=self.motion.job if not id_mode else None
-                ids=(job.get('ids') or [job['id']]) if job else list(IDS)
+                ids=(job.get('ids') or [job['id']]) if job else self.poll_ids(start)
             if id_mode:
                 self.stop.wait(.005)
                 continue
@@ -168,7 +182,7 @@ class App:
             now=time.monotonic(); rows=[]; aligned=reference_aligned(self.profile)
             for i,sid in enumerate(IDS):
                 k=str(sid); r=copy.deepcopy(self.rows.get(sid,{})); age=now-r.pop('at',0)
-                if age>.4: r.update(count=None,torque=None,error='反馈已过期')
+                if age>.4 and r.get('count') is not None: r.update(count=None,torque=None,error='反馈已过期')
                 r.update(id=sid,name=NAMES[i],label=LABELS[i],age_ms=round(age*1000),
                          angle=None if r.get('count') is None else angle(HOME[i],r['count'],self.profile['zero'][k],self.profile['sign'][k]))
                 rows.append(r)
@@ -236,7 +250,7 @@ class App:
                 self.id_setup.require_idle()
                 for sid in set(self.id_setup.found) | self.id_setup.held_ids:
                     if self.bus.read_raw(sid,40,1)!=b'\0': raise ValueError('请先确认发现的舵机全部断力')
-                self.id_setup.active=False;self.rows={}
+                self.id_setup.active=False;self.rows.clear();self.servo_retry_at.clear()
                 return {'message':'已退出 ID 设置，恢复读取现有关节；已有 ID 和标定保持不变。'}
             if op=='id_scan':
                 self.id_setup.scan();return {'message':'正在扫描 ID 0～253，不修改舵机参数'}
