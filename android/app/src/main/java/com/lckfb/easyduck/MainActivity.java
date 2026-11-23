@@ -3,7 +3,10 @@ package com.lckfb.easyduck;
 import android.Manifest;
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.content.ActivityNotFoundException;
+import android.content.Intent;
 import android.content.pm.ActivityInfo;
+import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.content.res.ColorStateList;
 import android.content.res.Configuration;
@@ -19,6 +22,7 @@ import android.net.Network;
 import android.net.NetworkCapabilities;
 import android.net.Uri;
 import android.os.Bundle;
+import android.provider.Settings;
 import android.text.InputType;
 import android.text.TextUtils;
 import android.view.ContextThemeWrapper;
@@ -51,6 +55,7 @@ import org.json.JSONException;
 public final class MainActivity extends Activity {
     private static final int SPEAKER_VOLUME_STEP = 5;
     private static final int MICROPHONE_PERMISSION = 10;
+    private static final int INSTALL_PERMISSION = 11;
     private static final int[] VOICE_RETRY_MS = {1000, 2000, 4000, 6000, 8000};
     private static final String RELEASE_CONTROL = "window.dispatchEvent(new Event('blur'));"
             + "window.dispatchEvent(new Event('pagehide'));";
@@ -72,6 +77,7 @@ public final class MainActivity extends Activity {
     private Button audioSettingsButton;
     private int micBoost;
     private Call speakerVolumeCall;
+    private Button updateButton;
     private Button orientationButton;
     private Button addressButton;
     private Button landscapeSettings;
@@ -80,6 +86,8 @@ public final class MainActivity extends Activity {
     private boolean overlaySupported;
     private LinearLayout voiceState;
     private LinearLayout voiceActions;
+    private Call updateCall;
+    private boolean installPending;
     private volatile String host;
     private boolean controlFailed;
     private VoiceConnection voice;
@@ -147,7 +155,7 @@ public final class MainActivity extends Activity {
         getWindow().getDecorView().setSystemUiVisibility(light()
                 ? View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR | View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR : 0);
         for (TextView view : new TextView[]{title, addressLabel, voiceStatus, routeStatus,
-                addressButton, orientationButton, landscapeSettings, voiceButton, audioSettingsButton, talkButton}) {
+                addressButton, updateButton, orientationButton, landscapeSettings, voiceButton, audioSettingsButton, talkButton}) {
             view.setText(tr((String) view.getTag()));
             view.setShadowLayer(light() ? 0 : dp(2), 0, dp(1), Color.BLACK);
         }
@@ -155,7 +163,7 @@ public final class MainActivity extends Activity {
         addressLabel.setTextColor(muted);
         voiceStatus.setTextColor(textColor);
         routeStatus.setTextColor(accent);
-        for (Button button : new Button[]{addressButton, orientationButton,
+        for (Button button : new Button[]{addressButton, updateButton, orientationButton,
                 landscapeSettings, voiceButton, audioSettingsButton}) {
             button.setTextColor(textColor);
             styleButton(button, false);
@@ -232,6 +240,9 @@ public final class MainActivity extends Activity {
         Button address = addressButton = button("连接地址");
         address.setOnClickListener(view -> showAddressDialog());
         header.addView(address);
+        updateButton = button("检查更新");
+        updateButton.setOnClickListener(view -> checkForUpdate());
+        header.addView(updateButton);
         orientationButton = button("横屏");
         orientationButton.setOnClickListener(view -> setRequestedOrientation(isLandscape()
                 ? ActivityInfo.SCREEN_ORIENTATION_USER_PORTRAIT
@@ -519,6 +530,10 @@ public final class MainActivity extends Activity {
             showAddressDialog();
             return true;
         });
+        options.getMenu().add(tr("检查更新")).setOnMenuItemClickListener(item -> {
+            checkForUpdate();
+            return true;
+        });
         options.getMenu().add(tr("切回竖屏")).setOnMenuItemClickListener(item -> {
             setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_USER_PORTRAIT);
             return true;
@@ -538,6 +553,7 @@ public final class MainActivity extends Activity {
         boolean overlay = isLandscape() && overlaySupported;
         int standardButtons = overlay ? View.GONE : View.VISIBLE;
         addressButton.setVisibility(standardButtons);
+        updateButton.setVisibility(standardButtons);
         orientationButton.setVisibility(standardButtons);
         landscapeSettings.setVisibility(overlay ? View.VISIBLE : View.GONE);
         addressLabel.setMaxWidth(overlay ? dp(132) : Integer.MAX_VALUE);
@@ -627,6 +643,123 @@ public final class MainActivity extends Activity {
         int second = Integer.parseInt(parts[1]);
         return first == 10 || (first == 172 && second >= 16 && second <= 31)
                 || (first == 192 && second == 168) || (first == 169 && second == 254);
+    }
+
+    private void checkForUpdate() {
+        EditText input = new EditText(themedContext());
+        input.setInputType(InputType.TYPE_CLASS_PHONE);
+        input.setSingleLine();
+        input.setHint(tr("测试电脑或板端的局域网 IP"));
+        input.setText(getPreferences(MODE_PRIVATE).getString("updateHost", ""));
+        AlertDialog dialog = new AlertDialog.Builder(themedContext()).setTitle(tr("局域网检查更新"))
+                .setMessage(tr("手机和更新服务器连接同一 Wi-Fi，端口 " + AppUpdates.PORT))
+                .setView(input).setNegativeButton(tr("取消"), null).setPositiveButton(tr("检查"), null).create();
+        dialog.setOnShowListener(event -> dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+                .setOnClickListener(view -> {
+                    String source = input.getText().toString().trim();
+                    if (!isLocalIp(source)) {
+                        input.setError(tr("请输入有效的局域网 IP"));
+                        return;
+                    }
+                    getPreferences(MODE_PRIVATE).edit().putString("updateHost", source).apply();
+                    dialog.dismiss();
+                    queryUpdate(source);
+                }));
+        dialog.show();
+    }
+
+    private void setUpdateBusy(String label) {
+        updateButton.setEnabled(label == null);
+        label(updateButton, label == null ? "检查更新" : label);
+    }
+
+    private void queryUpdate(String source) {
+        setUpdateBusy("检查中");
+        updateCall = AppUpdates.check(this, localWifi(source), source, (release, failure) -> runOnUiThread(() -> {
+            if (isDestroyed() || isFinishing()) return;
+            setUpdateBusy(null);
+            if (!foreground) return;
+            if (failure != null) {
+                Toast.makeText(this, tr(failure), Toast.LENGTH_LONG).show();
+                return;
+            }
+            PackageInfo installed;
+            try {
+                installed = getPackageManager().getPackageInfo(getPackageName(), 0);
+            } catch (PackageManager.NameNotFoundException error) {
+                Toast.makeText(this, tr("无法读取当前 App 版本"), Toast.LENGTH_SHORT).show();
+                return;
+            }
+            if (release.code <= AppUpdates.versionCode(installed)) {
+                Toast.makeText(this, tr("没有更新，当前版本 " + installed.versionName), Toast.LENGTH_LONG).show();
+                return;
+            }
+            new AlertDialog.Builder(themedContext()).setTitle(tr("发现新版本 " + release.version))
+                    .setMessage(String.format(tr("当前版本 %s。下载后按手机提示覆盖安装。"),
+                            installed.versionName))
+                    .setNegativeButton(tr("稍后"), null)
+                    .setPositiveButton(tr("下载 APK"), (dialog, which) -> downloadUpdate(source, release))
+                    .show();
+        }));
+    }
+
+    private void downloadUpdate(String source, AppUpdates.Release release) {
+        setUpdateBusy("下载中");
+        updateCall = AppUpdates.download(this, localWifi(source), source, release, (apk, failure) ->
+                runOnUiThread(() -> {
+                    if (isDestroyed() || isFinishing()) return;
+                    setUpdateBusy(null);
+                    if (failure != null) {
+                        if (foreground) Toast.makeText(this, tr(failure), Toast.LENGTH_LONG).show();
+                        return;
+                    }
+                    installPending = true;
+                    if (foreground) showInstallPrompt();
+                }));
+    }
+
+    private void showInstallPrompt() {
+        installPending = false;
+        new AlertDialog.Builder(themedContext()).setTitle(tr("安装包已下载"))
+                .setMessage(tr("按 Android 提示覆盖安装，原来的鸭子地址会保留。"))
+                .setNegativeButton(tr("稍后"), null)
+                .setPositiveButton(tr("安装"), (dialog, which) -> installUpdate())
+                .show();
+    }
+
+    private void installUpdate() {
+        try {
+            if (!getPackageManager().canRequestPackageInstalls()) {
+                new AlertDialog.Builder(themedContext()).setTitle(tr("允许 EasyDuck 安装测试包"))
+                        .setMessage(tr("在系统设置里打开「允许来自此来源」，返回后继续安装。"))
+                        .setNegativeButton(tr("取消"), null)
+                        .setPositiveButton(tr("去设置"), (dialog, which) -> {
+                            try {
+                                startActivityForResult(new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                                        Uri.parse("package:" + getPackageName())), INSTALL_PERMISSION);
+                            } catch (ActivityNotFoundException error) {
+                                Toast.makeText(this, tr("找不到系统安装权限设置"), Toast.LENGTH_LONG).show();
+                            }
+                        }).show();
+                return;
+            }
+            if (!AppUpdates.downloadedApk(this).isFile()) {
+                Toast.makeText(this, tr("安装包已被清理，请重新下载"), Toast.LENGTH_LONG).show();
+                return;
+            }
+            Uri uri = Uri.parse("content://" + getPackageName() + ".updates/" + AppUpdates.APK_NAME);
+            startActivity(new Intent(Intent.ACTION_VIEW).setDataAndType(uri, UpdateApkProvider.APK_TYPE)
+                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION));
+        } catch (ActivityNotFoundException | SecurityException error) {
+            Toast.makeText(this, tr("无法打开 Android 安装界面"), Toast.LENGTH_LONG).show();
+        }
+    }
+
+    @Override protected void onActivityResult(int request, int result, Intent data) {
+        super.onActivityResult(request, result, data);
+        if (request == INSTALL_PERMISSION && getPackageManager().canRequestPackageInstalls()) {
+            installPending = true;
+        }
     }
 
     private void showAddressDialog() {
@@ -853,6 +986,7 @@ public final class MainActivity extends Activity {
         foreground = true;
         web.onResume();
         if (isLocalIp(host)) openController();
+        if (installPending) showInstallPrompt();
         if (permissionGrantedPending) {
             permissionGrantedPending = false;
             web.post(this::enableVoice);
@@ -877,6 +1011,7 @@ public final class MainActivity extends Activity {
     }
 
     @Override protected void onDestroy() {
+        if (updateCall != null) updateCall.cancel();
         if (speakerVolumeCall != null) speakerVolumeCall.cancel();
         getSystemService(ConnectivityManager.class).bindProcessToNetwork(null);
         web.destroy();

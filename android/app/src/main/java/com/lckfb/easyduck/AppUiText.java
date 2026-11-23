@@ -7,6 +7,15 @@ final class AppUiText {
         if (source.startsWith("正在连接 ")) {
             return "Connecting to " + source.substring("正在连接 ".length());
         }
+        if (source.startsWith("手机和更新服务器连接同一 Wi-Fi，端口 ")) {
+            return "Connect your phone to the update server’s Wi-Fi. Port " + source.substring("手机和更新服务器连接同一 Wi-Fi，端口 ".length());
+        }
+        if (source.startsWith("没有更新，当前版本 ")) {
+            return "You’re up to date. Installed version: " + source.substring("没有更新，当前版本 ".length());
+        }
+        if (source.startsWith("发现新版本 ")) {
+            return "Update available: " + source.substring("发现新版本 ".length());
+        }
         String localControl = " · 局域网遥控";
         if (source.endsWith(localControl)) {
             return source.substring(0, source.length() - localControl.length()) + " · Local control";
@@ -14,6 +23,7 @@ final class AppUiText {
         return switch (source) {
             case "尚未连接" -> "Not connected";
             case "连接地址" -> "Address";
+            case "检查更新" -> "Updates";
             case "横屏" -> "Landscape";
             case "竖屏" -> "Portrait";
             case "切回竖屏" -> "Switch to portrait";
@@ -38,8 +48,26 @@ final class AppUiText {
             case "开启对讲" -> "Intercom";
             case "按住说话" -> "Hold to talk";
             case "正在打开麦克风" -> "Starting microphone";
+            case "测试电脑或板端的局域网 IP" -> "Update server IP";
+            case "局域网检查更新" -> "Check for local updates";
             case "取消" -> "Cancel";
+            case "检查" -> "Check";
             case "请输入有效的局域网 IP" -> "Enter a valid local IP address";
+            case "检查中" -> "Checking…";
+            case "无法读取当前 App 版本" -> "Could not read the installed app version";
+            case "当前版本 %s。下载后按手机提示覆盖安装。" -> "Installed version: %s. Download the APK and follow Android’s prompts to update.";
+            case "稍后" -> "Later";
+            case "下载 APK" -> "Download APK";
+            case "下载中" -> "Downloading…";
+            case "安装包已下载" -> "APK downloaded";
+            case "按 Android 提示覆盖安装，原来的鸭子地址会保留。" -> "Follow Android’s prompts to update. Your duck’s address will be kept.";
+            case "安装" -> "Install";
+            case "允许 EasyDuck 安装测试包" -> "Allow EasyDuck to install test updates";
+            case "在系统设置里打开「允许来自此来源」，返回后继续安装。" -> "Turn on Allow from this source in Android settings, then return to install.";
+            case "去设置" -> "Open settings";
+            case "找不到系统安装权限设置" -> "Could not open Android’s install permission settings";
+            case "安装包已被清理，请重新下载" -> "The downloaded APK was removed. Download it again.";
+            case "无法打开 Android 安装界面" -> "Could not open the Android installer";
             case "例如 192.168.1.100" -> "e.g. 192.168.1.100";
             case "鸭子的局域网 IP" -> "Duck’s local IP address";
             case "连接" -> "Connect";
@@ -58,6 +86,8 @@ final class AppUiText {
             case "连接中断，正在重连" -> "Connection lost. Reconnecting…";
             case "取消重连" -> "Cancel retry";
             case "开启对讲需要麦克风权限" -> "Allow microphone access to use intercom.";
+            case "无法读取更新信息，请检查局域网地址和 update.json" -> "Could not check for updates. Check the local IP address and update.json.";
+            case "APK 下载或校验失败，请检查安装包、版本和签名" -> "APK download or verification failed. Check the file, version and signature.";
             case "手机扬声器播放失败" -> "Phone speaker playback failed";
             case "对讲连接已断开" -> "Intercom disconnected";
             case "手机麦克风无法录音，请检查权限" -> "Could not record audio. Check microphone access.";
