@@ -32,7 +32,7 @@ overtemp_gain = 3
 fall_gravity_z = -0.819152
 [audio]
 enabled = true
-device = "plughw:0,0"
+device = "easyduck_speaker"
 bank = "/var/lib/robot/sounds"
 greet = true
 [detect]

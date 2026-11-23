@@ -54,7 +54,8 @@ def mapping(profile, binaries):
 
     for name in ('network_routes.py', 'navigation-client.js'):
         result.append((ROOT / 'deploy' / name, Path('opt/robot/deploy') / name))
-    for name in ('server.py', 'usb_camera.py'):
+    for name in ('server.py', 'usb_camera.py', 'intercom.py', 'intercom_stream.py',
+                 'android_intercom.py', 'requirements-intercom.txt'):
         result.append((ROOT / 'web' / name, Path('opt/robot/xgoduck-web') / name))
     for name in ('first_setup.py', 'connections.py', 'navigation.py'):
         result.append((ROOT / 'deploy/setup' / name, Path('opt/robot/setup') / name))
@@ -73,6 +74,8 @@ def mapping(profile, binaries):
     tree(ROOT / 'deploy/modules-load.d', 'etc/modules-load.d')
     result.append((ROOT / 'deploy/kernel/check_gamepad.py', Path('opt/robot/deploy/check_gamepad.py')))
     tree(ROOT / 'deploy/alsa', 'var/lib/alsa')
+    if profile == 'board':
+        result.append((ROOT / 'deploy/easyduck-speaker.conf', Path('etc/alsa/conf.d/99-easyduck-speaker.conf')))
     result.append((ROOT / 'LICENSE', Path('opt/robot/licenses/LICENSE')))
     result.append((ROOT / 'NOTICE', Path('opt/robot/licenses/NOTICE')))
     result.append((ROOT / 'THIRD_PARTY_NOTICES.md', Path('opt/robot/licenses/THIRD_PARTY_NOTICES.md')))

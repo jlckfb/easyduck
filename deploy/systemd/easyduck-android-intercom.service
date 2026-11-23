@@ -1,0 +1,16 @@
+[Unit]
+Description=EasyDuck Android intercom on the local network
+After=network.target
+
+[Service]
+Type=simple
+Environment=PYTHONPATH=/opt/robot/xgoduck-web/intercom-deps
+ExecCondition=/usr/bin/python3 -c 'import wsproto'
+ExecStart=/usr/bin/python3 /opt/robot/xgoduck-web/android_intercom.py
+Restart=on-failure
+RestartSec=2
+UMask=0077
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
